@@ -1,50 +1,65 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BiFoodMenu } from "react-icons/bi";
-import { GoHome } from "react-icons/go";
-import { FaTasks } from "react-icons/fa";
-import { FiUser, FiUserPlus } from "react-icons/fi";
-import { MdOutlineGroup, MdOutlineGroupAdd } from "react-icons/md";
+import { IoIosArrowBack } from "react-icons/io";
+import { MdDashboard, MdTask, MdPeople, MdPersonAdd, MdGroupAdd } from "react-icons/md";
+import { FiUsers } from "react-icons/fi";
 
 const navItems = [
-  { name: "Dashboard", href: "/", icon: GoHome },
-  { name: "Projects", href: "/projects", icon: FaTasks },
-  { name: "Users", href: "/users", icon: FiUser },
-  { name: "Add User", href: "/users/add", icon: FiUserPlus },
-  { name: "Clients", href: "/clients", icon: MdOutlineGroup },
-  { name: "Add Client", href: "/clients/add", icon: MdOutlineGroupAdd },
+  { name: "Dashboard", href: "/", icon: MdDashboard },
+  { name: "Projects", href: "/projects", icon: MdTask },
+  { name: "Users", href: "/users", icon: FiUsers },
+  { name: "Add User", href: "/users/add", icon: MdPersonAdd },
+  { name: "Clients", href: "/clients", icon: MdPeople },
+  { name: "Add Client", href: "/clients/add", icon: MdGroupAdd },
 ];
 
 const Sidebar = () => {
   const pathname = usePathname();
+  const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <div className="w-60 h-screen border-r border-[#E3E8EE] p-5">
+    <div
+      className={`h-screen bg-white border-r border-gray-200 flex flex-col transition-all duration-300 shadow-sm ${
+        collapsed ? "w-20" : "w-64"
+      }`}
+    >
       {/* Header */}
-      <div className="flex justify-between items-center text-[#333333]">
-        <div className="text-[#636363]">Navigation</div>
-        <BiFoodMenu size={20} />
+      <div className="flex justify-between items-center p-4">
+        {!collapsed && <div className="text-gray-700 font-semibold text-lg">Navigation</div>}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="p-1 hover:bg-gray-100 rounded-md transition-transform duration-300"
+        >
+          <IoIosArrowBack
+            size={22}
+            className={`transform transition-transform duration-300 ${
+              collapsed ? "rotate-180" : "rotate-0"
+            } text-gray-600`}
+          />
+        </button>
       </div>
 
       {/* Nav Links */}
-      <div className="mt-10 flex flex-col gap-2 text-[#737373]">
+      <div className="flex flex-col gap-1 mt-4 flex-1">
         {navItems.map(({ name, href, icon: Icon }) => {
           const isActive = pathname === href;
           return (
             <Link
               key={name}
               href={href}
-              className={`flex items-center gap-3 px-3 py-2 rounded-md transition-colors ${
+              className={`flex items-center gap-3 p-3 mx-2 rounded-lg transition-colors duration-200 ${
                 isActive
-                  ? "bg-[#E3E8EE] text-[#333333] font-medium"
-                  : "hover:bg-gray-100 text-[#737373]"
+                  ? "bg-blue-100 text-blue-600 font-medium"
+                  : "hover:bg-gray-100 text-gray-600"
               }`}
             >
-              <Icon size={20} />
-              <span>{name}</span>
+              <div className="flex-shrink-0">
+                <Icon size={22} />
+              </div>
+              {!collapsed && <span className="text-sm">{name}</span>}
             </Link>
           );
         })}
