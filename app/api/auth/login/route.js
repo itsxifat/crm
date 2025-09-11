@@ -1,6 +1,6 @@
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
-import connectDB from "@/lib/mongoose";   // ✅ updated path
+import connectDB from "@/lib/mongodb";
 import { NextResponse } from "next/server";
 import jwt from "jsonwebtoken";
 
