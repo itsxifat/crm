@@ -14,19 +14,44 @@ export async function POST(req) {
     const db = client.db("en_crm");
     const users = db.collection("users");
 
-    // Check if email already exists
+    // Check if the email exists in DB
     const existingUser = await users.findOne({ email });
+
     if (existingUser) {
-      return NextResponse.json({ message: "Email already exists" }, { status: 400 });
+      if (existingUser.role !== "admin") {
+        return NextResponse.json(
+          { message: "You must be an admin to use this feature" },
+          { status: 403 }
+        );
+      }
+
+      // If it's admin and already has account
+      return NextResponse.json(
+        { message: "Admin already has an account" },
+        { status: 400 }
+      );
+    }
+
+    // If email not found in DB → block non-admins
+    // (meaning, only pre-created admins can sign up)
+    const preApprovedAdmin = await users.findOne({ email, role: "admin" });
+    if (!preApprovedAdmin) {
+      return NextResponse.json(
+        { message: "You must be an admin to use this feature" },
+        { status: 403 }
+      );
     }
 
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Insert new user
-    await users.insertOne({ name, email, password: hashedPassword });
+    // Create account for admin
+    await users.updateOne(
+      { email },
+      { $set: { name, password: hashedPassword } }
+    );
 
-    return NextResponse.json({ message: "User created successfully" });
+    return NextResponse.json({ message: "Admin account created successfully" });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ message: "Internal server error" }, { status: 500 });

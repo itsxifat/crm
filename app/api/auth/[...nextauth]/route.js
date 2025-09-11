@@ -18,18 +18,45 @@ export const authOptions = {
         const db = client.db("en_crm");
         const users = db.collection("users");
 
+        // Find the user
         const user = await users.findOne({ email: credentials.email });
         if (!user) throw new Error("No user found");
 
+        // Check password
         const isValid = await bcrypt.compare(credentials.password, user.password);
         if (!isValid) throw new Error("Invalid password");
 
-        return { id: user._id, name: user.name, email: user.email };
+        // Update lastLogin and isActive
+        await users.updateOne(
+          { _id: user._id },
+          { $set: { lastLogin: new Date(), isActive: true } }
+        );
+
+        return {
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          role: user.role,
+        };
       },
     }),
   ],
   session: {
-    strategy: "jwt", // or "database" if you want session storage
+    strategy: "jwt",
+  },
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.role = user.role; // add role to token
+      }
+      return token;
+    },
+    async session({ session, token }) {
+      if (token) {
+        session.user.role = token.role; // make role available in client
+      }
+      return session;
+    },
   },
   pages: {
     signIn: "/login",
