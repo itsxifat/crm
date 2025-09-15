@@ -17,7 +17,7 @@ export default function RootLayout({ children }) {
           {/* Content below Navbar */}
           <div className="flex flex-1">
             {/* Sidebar on the left */}
-            <Sidebar />
+            <Sidebar className="sticky" />
 
             {/* Main content area */}
             <main className="flex-1 bg-gray-50">{children}</main>

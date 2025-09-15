@@ -14,9 +14,16 @@ export const Navbar = () => {
   return (
     <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md shadow-sm">
       <div className="container mx-auto flex justify-between items-center py-4 px-6 md:px-12">
-        {/* Logo */}
-        <div className="font-extrabold text-2xl text-gray-800 cursor-pointer" onClick={() => router.push("/")}>
-          AppLogo
+        {/* Logo only */}
+        <div
+          className="flex items-center cursor-pointer"
+          onClick={() => router.push("/")}
+        >
+          <img
+            src="/logo.png"
+            alt="App Logo"
+            className="h-10 w-auto"
+          />
         </div>
 
         {/* Search Box */}
@@ -61,13 +68,24 @@ export const Navbar = () => {
                 {/* User Avatar */}
                 <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white font-semibold text-lg ring-2 ring-offset-2 ring-indigo-500">
                   {session.user.image ? (
-                    <img src={session.user.image} alt="User Avatar" className="w-full h-full rounded-full object-cover" />
+                    <img
+                      src={session.user.image}
+                      alt="User Avatar"
+                      className="w-full h-full rounded-full object-cover"
+                    />
                   ) : (
                     session.user.name[0].toUpperCase()
                   )}
                 </div>
-                <span className="font-medium hidden md:inline">{session.user.name.split(" ")[0]}</span>
-                <ChevronDown size={16} className={`text-gray-500 transition-transform duration-200 ${dropdownOpen ? 'rotate-180' : ''}`} />
+                <span className="font-medium hidden md:inline">
+                  {session.user.name.split(" ")[0]}
+                </span>
+                <ChevronDown
+                  size={16}
+                  className={`text-gray-500 transition-transform duration-200 ${
+                    dropdownOpen ? "rotate-180" : ""
+                  }`}
+                />
               </button>
 
               {/* Dropdown Menu */}
@@ -81,8 +99,12 @@ export const Navbar = () => {
                     className="absolute right-0 mt-3 w-60 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden"
                   >
                     <div className="p-4 border-b border-gray-200">
-                      <p className="font-semibold text-gray-800">{session.user.name}</p>
-                      <p className="text-sm text-gray-500 truncate">{session.user.email}</p>
+                      <p className="font-semibold text-gray-800">
+                        {session.user.name}
+                      </p>
+                      <p className="text-sm text-gray-500 truncate">
+                        {session.user.email}
+                      </p>
                     </div>
                     <button
                       onClick={() => signOut()}

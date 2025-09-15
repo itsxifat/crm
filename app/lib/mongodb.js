@@ -1,29 +1,37 @@
-// lib/mongodb.js
 import { MongoClient } from "mongodb";
 
 const uri = process.env.MONGODB_URI;
-const options = {};
 const dbName = process.env.MONGODB_DB || "projectsdb";
 
 if (!uri) throw new Error("Missing MONGODB_URI");
+
+const options = {
+  serverSelectionTimeoutMS: 5000,
+  tls: true,
+};
 
 let client;
 let clientPromise;
 
 if (process.env.NODE_ENV === "development") {
-  if (!global._mongoClientPromise) {
+  if (!globalThis._mongoClientPromise) {
     client = new MongoClient(uri, options);
-    global._mongoClientPromise = client.connect();
+    globalThis._mongoClientPromise = client.connect().catch((e) => {
+      console.error("[Mongo] connect error (dev):", e?.message || e);
+      throw e;
+    });
   }
-  clientPromise = global._mongoClientPromise;
+  clientPromise = globalThis._mongoClientPromise;
 } else {
   client = new MongoClient(uri, options);
-  clientPromise = client.connect();
+  clientPromise = client.connect().catch((e) => {
+    console.error("[Mongo] connect error (prod):", e?.message || e);
+    throw e;
+  });
 }
 
 export default clientPromise;
 
-// Helper to get a DB instance
 export async function getDb() {
   const cli = await clientPromise;
   return cli.db(dbName);

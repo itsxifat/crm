@@ -1,4 +1,3 @@
-// app/api/projects/update/route.js
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
@@ -7,56 +6,78 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+function normalizeServices(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter((s) => s && typeof s.description === "string" && s.description.trim().length)
+    .map((s) => {
+      const unit = Number(s.unit) || 0;
+      const unitPrice = Number(s.unitPrice) || 0;
+      const totalPrice = unit * unitPrice;
+      const offer = s.offerPrice !== undefined && s.offerPrice !== null && s.offerPrice !== ""
+        ? Number(s.offerPrice) || 0
+        : undefined;
+      const note = typeof s.note === "string" && s.note.trim() ? s.note.trim() : undefined;
+      return {
+        description: s.description.trim(),
+        unit,
+        unitPrice,
+        totalPrice,
+        ...(offer !== undefined ? { offerPrice: offer } : {}),
+        ...(note !== undefined ? { note } : {}),
+      };
+    });
+}
+
 export async function POST(req) {
   try {
     const body = await req.json();
     const {
       id,
+      _id,
       name,
       clientId,
-      assignedUserIds,
+      assignedUserIds = [],
       startDate,
       dueDate,
-      totalAmount,
-      totalCost,
-      status,
+      services = [],
+      totalCost = 0,
+      status = "In progress",
     } = body;
 
-    if (!id || !ObjectId.isValid(id)) {
-      return NextResponse.json({ error: "Valid id is required" }, { status: 400 });
+    if (!id && !_id) {
+      return NextResponse.json({ error: "id (ENV) or _id is required" }, { status: 400 });
     }
-
-    const update = { updatedAt: new Date() };
-
-    if (name !== undefined) update.name = name;
-    if (clientId !== undefined) {
-      if (!ObjectId.isValid(clientId)) {
-        return NextResponse.json({ error: "Invalid clientId" }, { status: 400 });
-      }
-      update.clientId = new ObjectId(clientId);
-    }
-    if (assignedUserIds !== undefined) {
-      update.assignedUserIds = (assignedUserIds || [])
-        .filter((uid) => ObjectId.isValid(uid))
-        .map((uid) => new ObjectId(uid));
-    }
-    if (startDate !== undefined) update.startDate = startDate ? new Date(startDate) : null;
-    if (dueDate !== undefined) update.dueDate = dueDate ? new Date(dueDate) : null;
-
-    // Recompute profit if amounts provided
-    if (totalAmount !== undefined) update.totalAmount = Number(totalAmount) || 0;
-    if (totalCost !== undefined) update.totalCost = Number(totalCost) || 0;
-    if (totalAmount !== undefined || totalCost !== undefined) {
-      const ta = update.totalAmount ?? 0;
-      const tc = update.totalCost ?? 0;
-      update.profit = ta - tc;
-    }
-
-    if (status !== undefined) update.status = status;
 
     const db = await getDb();
-    await db.collection("projects").updateOne({ _id: new ObjectId(id) }, { $set: update });
+    const where = id ? { id } : { _id: new ObjectId(_id) };
 
+    const cleaned = normalizeServices(services);
+    const totalAmount = cleaned.reduce((sum, s) => {
+      const val = s.offerPrice !== undefined ? s.offerPrice : s.totalPrice;
+      return sum + (Number(val) || 0);
+    }, 0);
+
+    const costNum = Number(totalCost) || 0;
+    const profit = totalAmount - costNum;
+
+    const $set = {
+      ...(name !== undefined ? { name } : {}),
+      ...(clientId !== undefined ? { clientId: ObjectId.isValid(clientId) ? new ObjectId(clientId) : null } : {}),
+      ...(assignedUserIds
+        ? { assignedUserIds: assignedUserIds.filter(ObjectId.isValid).map((x) => new ObjectId(x)) }
+        : {}),
+      ...(startDate !== undefined ? { startDate: startDate ? new Date(startDate) : null } : {}),
+      ...(dueDate !== undefined ? { dueDate: dueDate ? new Date(dueDate) : null } : {}),
+      ...(services !== undefined ? { services: cleaned } : {}),
+      ...(status !== undefined ? { status } : {}),
+      totalAmount,
+      totalCost: costNum,
+      profit,
+      updatedAt: new Date(),
+    };
+
+    await db.collection("projects").updateOne(where, { $set });
     return NextResponse.json({ success: true });
   } catch (e) {
     console.error("projects/update error:", e);
