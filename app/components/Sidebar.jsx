@@ -22,7 +22,7 @@ const Sidebar = () => {
 
   return (
     <div
-      className={`h-screen bg-white border-r border-gray-200 flex flex-col transition-all duration-300 shadow-sm ${
+      className={`h-auto bg-white border-r border-gray-200 flex flex-col transition-all duration-300 shadow-sm ${
         collapsed ? "w-20" : "w-64"
       }`}
     >

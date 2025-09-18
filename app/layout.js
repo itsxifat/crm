@@ -8,19 +8,25 @@ import "./globals.css";
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
-      <body className="h-screen flex flex-col">
-        {/* Wrap your app with SessionProvider for NextAuth */}
+      <body className="min-h-screen antialiased">
         <SessionProvider>
-          {/* Full width Navbar on top */}
-          <Navbar />
+          {/* App shell */}
+          <div className="flex min-h-screen flex-col">
+            {/* Top navbar */}
+            <Navbar />
 
-          {/* Content below Navbar */}
-          <div className="flex flex-1">
-            {/* Sidebar on the left */}
-            <Sidebar className="sticky" />
+            {/* Sidebar + main */}
+            <div className="flex flex-1 min-h-0">
+              {/* Sidebar: fixed width, never shrink, full height */}
+              <aside className="flex shrink-0 min-h-screen">
+                <Sidebar />
+              </aside>
 
-            {/* Main content area */}
-            <main className="flex-1 bg-gray-50">{children}</main>
+              {/* Main: scrollable content */}
+              <main className="flex-1 min-w-0 bg-gray-50 overflow-auto">
+                {children}
+              </main>
+            </div>
           </div>
         </SessionProvider>
       </body>
