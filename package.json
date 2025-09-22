@@ -23,6 +23,7 @@
     "mongoose": "^8.18.1",
     "next": "15.5.2",
     "next-auth": "^4.24.11",
+    "puppeteer": "^24.22.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-hot-toast": "^2.6.0",

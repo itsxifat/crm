@@ -1,18 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { createPortal } from "react-dom";
 import {
   Search, ChevronDown, ChevronUp, SlidersHorizontal, MoreVertical,
 } from "lucide-react";
 import { getStatusColor, initialsOf, normalizeId, palette } from "@/lib/projects-utils";
 
-export default function TableProject({ data = [], onEdit, onRowClick }) {
+/**
+ * Props:
+ *  - data: Project[]
+ *  - onDeleted?: (id: string) => void
+ */
+export default function TableProject({ data = [], onDeleted }) {
   const [sortOrder, setSortOrder] = useState("desc");
-  const toggleSortOrder = () => setSortOrder((v) => (v === "desc" ? "asc" : "desc"));
   const SortIcon = sortOrder === "desc" ? ChevronDown : ChevronUp;
 
-  // NOTE: wire your sorting against data here if you want actual sorting
+  const toggleSortOrder = () => setSortOrder((v) => (v === "desc" ? "asc" : "desc"));
+
+  async function handleDelete(row) {
+    const id = row?.id;
+    if (!id) return;
+    const ok = window.confirm(`Delete project "${row.name || id}"? This cannot be undone.`);
+    if (!ok) return;
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json?.error || "Failed to delete");
+      onDeleted?.(id);
+    } catch (err) {
+      console.error("Delete project error:", err);
+      alert("Failed to delete the project.");
+    }
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
@@ -47,7 +68,19 @@ export default function TableProject({ data = [], onEdit, onRowClick }) {
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
+        <table className="min-w-full table-fixed divide-y divide-gray-200">
+          {/* Column sizing prevents width blowout */}
+          <colgroup>
+            <col className="w-[120px]" />     {/* Project ID */}
+            <col className="w-[24%]" />       {/* Project Name */}
+            <col className="w-[20%]" />       {/* Client */}
+            <col className="sm:w-[18%]" />    {/* Assigned to (hidden <sm>) */}
+            <col className="w-[14%]" />       {/* Status */}
+            <col className="md:w-[14%]" />    {/* Due Date (hidden <md>) */}
+            <col className="lg:w-[12%]" />    {/* Amount (hidden <lg>) */}
+            <col className="w-[64px]" />      {/* Actions */}
+          </colgroup>
+
           <thead className="bg-gray-50">
             <tr>
               <Th>Project ID</Th>
@@ -55,81 +88,81 @@ export default function TableProject({ data = [], onEdit, onRowClick }) {
               <Th>Client</Th>
               <Th className="hidden sm:table-cell">Assigned to</Th>
               <Th>Status</Th>
-              <Th className="hidden md:table-cell">Start</Th>
-              <Th className="hidden md:table-cell">Due</Th>
+              <Th className="hidden md:table-cell">Due Date</Th>
               <Th className="hidden lg:table-cell">Amount</Th>
-              <Th className="hidden lg:table-cell">Cost</Th>
-              <Th className="hidden xl:table-cell">Profit</Th>
               <Th className="text-right">Actions</Th>
             </tr>
           </thead>
+
           <tbody className="bg-white divide-y divide-gray-200">
             {data.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-6 py-12 text-center text-gray-500 text-sm">
+                <td colSpan={9} className="px-6 py-12 text-center text-gray-500 text-sm">
                   No projects found.
                 </td>
               </tr>
             ) : (
-              data.map((row, i) => (
-                <tr
-                  key={row.id || i}
-                  onClick={() => row.id && onRowClick?.(row.id)}
-                  className="cursor-pointer hover:bg-gray-50 transition-colors"
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => { if (e.key === 'Enter') onRowClick?.(row.id); }}
-                >
-                  <Td>
-                    <Link
-                      href={`/projects/${encodeURIComponent(row.id)}`}
-                      className="text-green-700 hover:underline font-medium"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {row.id}
-                    </Link>
-                  </Td>
-                  <Td>{row.name}</Td>
-                  <Td>{row.client}</Td>
-                  <Td className="hidden sm:table-cell">
-                    <div className="flex -space-x-2 overflow-hidden">
-                      {(row.assignedTo ?? []).map((u) => {
-                        const id = normalizeId(u);
-                        const init = initialsOf(u.name);
-                        const color = palette[Math.abs((id?.charCodeAt?.(0) || 0)) % palette.length];
-                        return (
-                          <div
-                            key={id}
-                            className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white ring-2 ring-white ${color}`}
-                            title={u.name}
-                          >
-                            {init}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </Td>
-                  <Td>
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(row.status)}`}>
-                      {row.status}
-                    </span>
-                  </Td>
-                  <Td className="hidden md:table-cell text-gray-500">{row.startDate}</Td>
-                  <Td className="hidden md:table-cell text-gray-500">{row.dueDate}</Td>
-                  <Td className="hidden lg:table-cell">{Number(row.totalAmount || 0).toFixed(2)}</Td>
-                  <Td className="hidden lg:table-cell">{Number(row.totalCost || 0).toFixed(2)}</Td>
-                  <Td className="hidden xl:table-cell">{Number(row.profit || 0).toFixed(2)}</Td>
-                  <Td className="text-right">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); onEdit?.(row); }}
-                      className="text-gray-500 hover:text-green-600 transition"
-                      aria-label={`Edit ${row.name}`}
-                    >
-                      <MoreVertical className="h-5 w-5" />
-                    </button>
-                  </Td>
-                </tr>
-              ))
+              data.map((row, i) => {
+                const key = row.id ?? i;
+                return (
+                  <tr key={key} className="hover:bg-gray-50 transition-colors">
+                    {/* ONLY Project ID navigates; allow breaking long IDs */}
+                    <Td>
+                      <Link
+                        href={`/projects/${encodeURIComponent(row.id)}`}
+                        className="text-green-700 hover:underline font-medium break-all"
+                      >
+                        {row.id}
+                      </Link>
+                    </Td>
+
+                    {/* Wrap long values; never push width */}
+                    <Td>{row.name}</Td>
+                    <Td>{row.client}</Td>
+
+                    {/* Assigned to: wrap avatars */}
+                    <Td className="hidden sm:table-cell align-top">
+                      <div className="flex flex-wrap gap-1">
+                        {(row.assignedTo ?? []).map((u) => {
+                          const id = normalizeId(u);
+                          const init = initialsOf(u.name);
+                          const color = palette[Math.abs((id?.charCodeAt?.(0) || 0)) % palette.length];
+                          return (
+                            <div
+                              key={id}
+                              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white ${color}`}
+                              title={u.name}
+                            >
+                              {init}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </Td>
+
+                    {/* STATUS — force single line */}
+                    <Td noWrap className="align-top">
+                      <span
+                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(row.status)} whitespace-nowrap`}
+                      >
+                        {row.status}
+                      </span>
+                    </Td>
+
+                    <Td className="hidden md:table-cell text-gray-500 align-top">{row.dueDate}</Td>
+                    <Td className="hidden lg:table-cell align-top">
+                      {Number(row.totalAmount || 0).toFixed(2)}
+                    </Td>
+
+                    {/* Actions */}
+                    <ActionsCell
+                      rowKey={key}
+                      row={row}
+                      onDelete={() => handleDelete(row)}
+                    />
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -138,18 +171,107 @@ export default function TableProject({ data = [], onEdit, onRowClick }) {
   );
 }
 
+/* ------------------------- Actions cell ------------------------- */
+function ActionsCell({ rowKey, row, onDelete }) {
+  const btnRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState({ x: 0, y: 0, w: 0 });
+
+  const calcCoords = () => {
+    const el = btnRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    setCoords({ x: r.left, y: r.bottom + 6, w: r.width });
+  };
+
+  useLayoutEffect(() => { if (open) calcCoords(); }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onScroll = () => calcCoords();
+    const onResize = () => calcCoords();
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    const onDoc = (e) => {
+      const btn = btnRef.current;
+      if (!btn) return;
+      const menu = document.getElementById(`menu-${rowKey}`);
+      if (!menu) return;
+      if (!btn.contains(e.target) && !menu.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDoc);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDoc);
+    };
+  }, [open, rowKey]);
+
+  return (
+    <Td noWrap className="text-right">
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen(v => !v); }}
+        className="inline-flex items-center justify-center p-2 text-gray-500 hover:text-green-600 rounded-md hover:bg-gray-50 transition"
+      >
+        <MoreVertical className="h-5 w-5" />
+      </button>
+
+      {open && createPortal(
+        <div
+          id={`menu-${rowKey}`}
+          role="menu"
+          style={{
+            position: "fixed",
+            top: coords.y,
+            left: Math.max(8, Math.min(coords.x - 180 + coords.w, window.innerWidth - 188)),
+            zIndex: 50,
+          }}
+          className="w-44 rounded-xl border border-gray-200 bg-white p-1 shadow-lg"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            role="menuitem"
+            onClick={() => { onDelete?.(); setOpen(false); }}
+            className="w-full text-left px-3 py-2 text-sm rounded-md text-rose-600 hover:bg-rose-50"
+          >
+            Delete project
+          </button>
+        </div>,
+        document.body
+      )}
+    </Td>
+  );
+}
+
+/* ----------------------------- Small helpers ----------------------------- */
 function Th({ children, className = "" }) {
   return (
-    <th className={`px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider ${className}`}>
-      {children}
+    <th
+      className={`px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider ${className}`}
+    >
+      <span className="block min-w-0 truncate">{children}</span>
     </th>
   );
 }
 
-function Td({ children, className = "" }) {
+function Td({ children, className = "", noWrap = false }) {
+  const wrapClass = noWrap ? "whitespace-nowrap" : "whitespace-normal break-words hyphens-auto";
   return (
-    <td className={`px-4 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-900 ${className}`}>
-      {children}
+    <td className={`px-4 sm:px-6 py-4 align-top text-sm text-gray-900 ${className}`}>
+      <div className={`min-w-0 ${wrapClass}`}>
+        {children}
+      </div>
     </td>
   );
 }

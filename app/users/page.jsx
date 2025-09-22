@@ -1,91 +1,151 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// --- Icon Components ---
+/* ---------- tiny inline icons ---------- */
 const SearchIcon = (props) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none"
+       stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="11" cy="11" r="8"></circle>
     <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
   </svg>
 );
-
 const PlusCircleIcon = (props) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none"
+       stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="10"></circle>
     <line x1="12" y1="8" x2="12" y2="16"></line>
     <line x1="8" y1="12" x2="16" y2="12"></line>
   </svg>
 );
-
 const MoreHorizontalIcon = (props) => (
-  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none"
+       stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="1"></circle>
     <circle cx="19" cy="12" r="1"></circle>
     <circle cx="5" cy="12" r="1"></circle>
   </svg>
 );
 
-const StatusBadge = ({ status }) => {
-  const baseClasses = "px-2.5 py-0.5 text-xs font-medium rounded-full inline-block";
-  const statusClasses = {
-    Active: "bg-green-100 text-green-800",
-    Inactive: "bg-gray-100 text-gray-800",
-    Invited: "bg-blue-100 text-blue-800",
-  };
-  return <span className={`${baseClasses} ${statusClasses[status] || statusClasses.Inactive}`}>{status}</span>;
-};
+/* ---------- presence helpers ---------- */
+const HEARTBEAT_MS = 15000;       // send "I'm online" every 15s
+const POLL_USERS_MS = 10000;      // refresh table every 10s
+const ONLINE_WINDOW_MS = 20000;   // if lastSeen within 20s -> Online
+
+function OnlineBadge({ lastSeen }) {
+  const now = Date.now();
+  const seen = lastSeen ? new Date(lastSeen).getTime() : 0;
+  const online = seen && (now - seen) <= ONLINE_WINDOW_MS;
+  const base = "px-2.5 py-0.5 text-xs font-medium rounded-full inline-block";
+  const cls = online ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800";
+  return <span className={`${base} ${cls}`}>{online ? "Online" : "Offline"}</span>;
+}
 
 const formatLastLogin = (dateString) => {
   if (!dateString) return 'Never';
   const date = new Date(dateString);
-  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleString();
 };
 
+/* ---------- page ---------- */
 export default function UsersPage() {
   const [users, setUsers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    async function fetchUsers() {
-      try {
-        const res = await fetch('/api/users/list');
-        const data = await res.json();
-        setUsers(data);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
+  // timers so we can clean up on unmount
+  const hbRef = useRef(null);
+  const pollRef = useRef(null);
+
+  async function fetchUsers() {
+    try {
+      const res = await fetch('/api/users/list', { cache: 'no-store' });
+      const data = await res.json();
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('users/list error:', err);
+    } finally {
+      setLoading(false);
     }
+  }
+
+  // presence: heartbeat + offline on tab close/hidden
+  useEffect(() => {
+    let unmounted = false;
+
+    async function beat() {
+      try {
+        await fetch('/api/presence/heartbeat', { method: 'POST', keepalive: true });
+      } catch {}
+    }
+
+    function sendOffline() {
+      try {
+        if (navigator.sendBeacon) {
+          const blob = new Blob([JSON.stringify({ reason: 'tab-close' })], { type: 'application/json' });
+          navigator.sendBeacon('/api/presence/offline', blob);
+        } else {
+          fetch('/api/presence/offline', { method: 'POST', keepalive: true, body: JSON.stringify({ reason: 'tab-close' }) });
+        }
+      } catch {}
+    }
+
+    // initial actions
     fetchUsers();
+    beat();
+
+    // repeaters
+    hbRef.current = setInterval(beat, HEARTBEAT_MS);
+    pollRef.current = setInterval(fetchUsers, POLL_USERS_MS);
+
+    // immediately mark offline when user closes/hides; mark online on focus
+    const onBeforeUnload = () => sendOffline();
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') sendOffline();
+      else beat();
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      if (unmounted) return;
+      unmounted = true;
+      clearInterval(hbRef.current);
+      clearInterval(pollRef.current);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      document.removeEventListener('visibilitychange', onVisibility);
+      // best-effort offline on unmount
+      sendOffline();
+    };
   }, []);
 
-  const filteredUsers = users.filter(user =>
-    user.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredUsers = useMemo(() => {
+    const q = (searchTerm || '').toLowerCase();
+    return users.filter(u =>
+      u.name?.toLowerCase().includes(q) ||
+      u.email?.toLowerCase().includes(q)
+    );
+  }, [users, searchTerm]);
 
   const handleExportPDF = () => {
     const doc = new jsPDF();
     const tableColumn = ["Name", "Email", "Role", "Status"];
-    const tableRows = users.map(user => [
-      user.name,
-      user.email,
-      user.role,
-      user.isActive ? "Active" : "Inactive"
-    ]);
-
-    doc.text("User List", 14, 15);
-    autoTable(doc, {
-      head: [tableColumn],
-      body: tableRows,
-      startY: 20,
+    const tableRows = users.map(user => {
+      const now = Date.now();
+      const seen = user.lastSeen ? new Date(user.lastSeen).getTime() : 0;
+      const online = seen && (now - seen) <= ONLINE_WINDOW_MS;
+      return [
+        user.name,
+        user.email,
+        user.role,
+        online ? "Online" : "Offline"
+      ];
     });
 
+    doc.text("User List", 14, 15);
+    autoTable(doc, { head: [tableColumn], body: tableRows, startY: 20 });
     doc.save("users.pdf");
   };
 
@@ -175,10 +235,13 @@ export default function UsersPage() {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
-                        <StatusBadge status={user.isActive ? 'Active' : 'Inactive'} />
+                        {/* ONLINE/OFFLINE from lastSeen freshness */}
+                        <OnlineBadge lastSeen={user.lastSeen} />
                       </td>
                       <td className="hidden sm:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-500">{user.role}</td>
-                      <td className="hidden md:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-500">{formatLastLogin(user.lastLogin)}</td>
+                      <td className="hidden md:table-cell px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {formatLastLogin(user.lastLogin)}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <button className="text-gray-500 hover:text-indigo-600">
                           <MoreHorizontalIcon className="h-5 w-5" />

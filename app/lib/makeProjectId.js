@@ -4,7 +4,7 @@ export function formatEnvId(date, serial) {
   const day = d.getDate();
   const yyyy = d.getFullYear();
   const serialStr = String(serial).padStart(3, "0");
-  return `ENV-${m}${day}${yyyy}-${serialStr}`;
+  return `ENF-${m}${day}${yyyy}-${serialStr}`;
 }
 
 export function todayKey(date = new Date()) {

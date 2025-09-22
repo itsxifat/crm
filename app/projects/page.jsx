@@ -231,7 +231,6 @@ export default function ProjectPage() {
   }, [projects, page, perPage]);
 
   const handleExportPDF = async () => {
-    // Lazy-load to keep initial bundle small
     const { default: jsPDF } = await import("jspdf");
     const autoTable = (await import("jspdf-autotable")).default;
 
@@ -253,7 +252,7 @@ export default function ProjectPage() {
       body: rows,
       startY: 20,
       styles: { fontSize: 9 },
-      headStyles: { fillColor: [16, 185, 129] }, // Tailwind green-500
+      headStyles: { fillColor: [16, 185, 129] },
     });
 
     doc.save("projects.pdf");
@@ -286,8 +285,10 @@ export default function ProjectPage() {
             ) : (
               <TableProject
                 data={paged}
-                onEdit={handleOpenModalForEdit}
-                onRowClick={handleRowClick}
+                onDeleted={(id) => {
+                  setProjects(prev => prev.filter(p => p.id !== id)); // optimistic remove
+                  // or call refresh();
+                }}
               />
             )}
           </div>

@@ -7,14 +7,17 @@ export async function POST(req) {
     const { name, email, password } = await req.json();
 
     if (!name || !email || !password) {
-      return NextResponse.json({ message: "All fields are required" }, { status: 400 });
+      return NextResponse.json(
+        { message: "All fields are required" },
+        { status: 400 }
+      );
     }
 
     const client = await clientPromise;
     const db = client.db("en_crm");
     const users = db.collection("users");
 
-    // Check if the email exists in DB
+    // Check if the email already exists
     const existingUser = await users.findOne({ email });
 
     if (existingUser) {
@@ -33,7 +36,7 @@ export async function POST(req) {
     }
 
     // If email not found in DB → block non-admins
-    // (meaning, only pre-created admins can sign up)
+    // (meaning only pre-created admins can sign up)
     const preApprovedAdmin = await users.findOne({ email, role: "admin" });
     if (!preApprovedAdmin) {
       return NextResponse.json(
@@ -54,6 +57,9 @@ export async function POST(req) {
     return NextResponse.json({ message: "Admin account created successfully" });
   } catch (err) {
     console.error(err);
-    return NextResponse.json({ message: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { message: "Internal server error" },
+      { status: 500 }
+    );
   }
 }
