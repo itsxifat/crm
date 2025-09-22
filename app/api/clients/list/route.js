@@ -17,44 +17,66 @@ export async function GET(req) {
 
     await connectMongoose();
 
-    const text = [];
+    // Build match (regex-based; works without text index)
+    let match = {};
     if (q) {
       const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-      text.push(
-        { companyName: rx },
-        { clientName: rx },
-        { email: rx },
-        { phone: rx },
-        { "address.line1": rx },   // ✅ fixed
-        { "address.city": rx },
-        { "address.state": rx },
-        { "address.postalCode": rx },
-        { "address.country": rx }
-      );
+      match = {
+        $or: [
+          { companyName: rx },
+          { clientName: rx },
+          { email: rx },
+          { phone: rx },
+          { "address.line1": rx },
+          { "address.city": rx },
+          { "address.state": rx },
+          { "address.postalCode": rx },
+          { "address.country": rx },
+        ],
+      };
     }
 
-    const match = q ? { $or: text } : {};
+    // Projection: keep only light fields (skip binary/file subdocs entirely)
+    const PROJECTION =
+      "companyName clientName email phone priority createdAt updatedAt"; // include _id by default
 
-    const [total, rows] = await Promise.all([
-      Client.countDocuments(match),
-      Client.find(match)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(perPage)
-        .lean()
-        .exec(),
-    ]);
+    // Faster total:
+    // - If no filter => estimatedDocumentCount (very fast)
+    // - If filtered  => countDocuments(match)
+    const totalPromise = q
+      ? Client.countDocuments(match)
+      : Client.estimatedDocumentCount();
 
-    const out = rows.map((c) => ({
-      _id: String(c._id),
-      companyName: c.companyName || "",
-      clientName: c.clientName || "",
-      email: c.email || "",
-      phone: c.phone || "",
-      priority: c.priority || "Normal",
-      createdAt: c.createdAt,
-      updatedAt: c.updatedAt,
-    }));
+    // Query
+    const rowsPromise = Client.find(match)
+      .select(PROJECTION)
+      .sort({ createdAt: -1 }) // ensure index on createdAt for speed
+      .skip(skip)
+      .limit(perPage)
+      .lean()
+      .exec();
+
+    const [total, rows] = await Promise.all([totalPromise, rowsPromise]);
+
+    // Normalize for frontend
+    const out = rows.map((c) => {
+      const id = String(c._id);
+      const name = (c.companyName && c.companyName.trim())
+        ? c.companyName
+        : (c.clientName || "");
+      return {
+        id,
+        _id: id,
+        name,
+        companyName: c.companyName || "",
+        clientName: c.clientName || "",
+        email: c.email || "",
+        phone: c.phone || "",
+        priority: c.priority || "Normal",
+        createdAt: c.createdAt,
+        updatedAt: c.updatedAt,
+      };
+    });
 
     return NextResponse.json({ total, page, perPage, rows: out });
   } catch (e) {
