@@ -1,11 +1,14 @@
-// app/api/clients/[id]/files/[field]/route.js
 import { NextResponse } from "next/server";
 import { connectMongoose } from "@/lib/mongoose";
 import mongoose from "mongoose";
 import Client from "@/models/Client";
 
-export async function GET(req, { params }) {
-  const { id, field } = await params;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+export async function GET(_req, { params }) {
+  const { id, field } = await params; // Next 15
 
   try {
     await connectMongoose();
@@ -14,21 +17,25 @@ export async function GET(req, { params }) {
       return NextResponse.json({ error: "Invalid client id" }, { status: 400 });
     }
 
+    // Need the Buffer; don't use .lean()
     const client = await Client.findById(id);
-    if (!client || !client[field] || !client[field].data) {
+    const fileDoc = client?.[field];
+
+    if (!client || !fileDoc || !fileDoc.data) {
       return NextResponse.json({ error: "File not found" }, { status: 404 });
     }
 
-    const file = client[field];
-    const binary = Buffer.isBuffer(file.data)
-      ? file.data
-      : Buffer.from(file.data);
+    const binary = Buffer.isBuffer(fileDoc.data) ? fileDoc.data : Buffer.from(fileDoc.data);
+    const filename = fileDoc.filename || `${field}`;
+    const mimetype = fileDoc.mimetype || "application/octet-stream";
 
     return new NextResponse(binary, {
+      status: 200,
       headers: {
-        "Content-Type": file.mimetype,
-        "Content-Disposition": `inline; filename="${file.filename}"`,
-        "Content-Length": file.size.toString(),
+        "Content-Type": mimetype,
+        "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
+        "Content-Length": String(fileDoc.size || binary.length),
+        "Cache-Control": "no-store",
       },
     });
   } catch (err) {

@@ -1,3 +1,4 @@
+// app/api/projects/update/route.js
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
@@ -18,11 +19,13 @@ function normalizeServices(arr) {
         ? Number(s.offerPrice) || 0
         : undefined;
       const note = typeof s.note === "string" && s.note.trim() ? s.note.trim() : undefined;
+      const cost = Number(s.cost) || 0; // NEW
       return {
         description: s.description.trim(),
         unit,
         unitPrice,
         totalPrice,
+        cost, // NEW
         ...(offer !== undefined ? { offerPrice: offer } : {}),
         ...(note !== undefined ? { note } : {}),
       };
@@ -43,6 +46,7 @@ export async function POST(req) {
       services = [],
       totalCost = 0,
       status = "In progress",
+      sisterConcern = "", // NEW
     } = body;
 
     if (!id && !_id) {
@@ -53,24 +57,29 @@ export async function POST(req) {
     const where = id ? { id } : { _id: new ObjectId(_id) };
 
     const cleaned = normalizeServices(services);
+
     const totalAmount = cleaned.reduce((sum, s) => {
       const val = s.offerPrice !== undefined ? s.offerPrice : s.totalPrice;
       return sum + (Number(val) || 0);
     }, 0);
 
-    const costNum = Number(totalCost) || 0;
+    // prefer per-service cost sum; fall back to provided totalCost
+    const costFromServices = cleaned.reduce((sum, s) => sum + (Number(s.cost) || 0), 0);
+    const costNum = costFromServices > 0 ? costFromServices : (Number(totalCost) || 0);
+
     const profit = totalAmount - costNum;
 
     const $set = {
       ...(name !== undefined ? { name } : {}),
       ...(clientId !== undefined ? { clientId: ObjectId.isValid(clientId) ? new ObjectId(clientId) : null } : {}),
-      ...(assignedUserIds
+      ...(Array.isArray(assignedUserIds)
         ? { assignedUserIds: assignedUserIds.filter(ObjectId.isValid).map((x) => new ObjectId(x)) }
         : {}),
       ...(startDate !== undefined ? { startDate: startDate ? new Date(startDate) : null } : {}),
       ...(dueDate !== undefined ? { dueDate: dueDate ? new Date(dueDate) : null } : {}),
       ...(services !== undefined ? { services: cleaned } : {}),
       ...(status !== undefined ? { status } : {}),
+      ...(sisterConcern !== undefined ? { sisterConcern } : {}), // NEW
       totalAmount,
       totalCost: costNum,
       profit,

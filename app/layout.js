@@ -18,7 +18,7 @@ export default function RootLayout({ children }) {
             {/* Sidebar + main */}
             <div className="flex flex-1 min-h-0">
               {/* Sidebar: fixed width, never shrink, full height */}
-              <aside className="flex shrink-0 min-h-screen">
+              <aside className="flex shrink-0 min-h-screen sticky">
                 <Sidebar />
               </aside>
 

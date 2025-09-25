@@ -4,7 +4,13 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { IoIosArrowBack } from "react-icons/io";
-import { MdDashboard, MdTask, MdPeople, MdReceiptLong } from "react-icons/md";
+import {
+  MdDashboard,
+  MdTask,
+  MdPeople,
+  MdReceiptLong,
+  MdAttachMoney, // ← icon for Expenses
+} from "react-icons/md";
 import { FiUsers } from "react-icons/fi";
 
 const navItems = [
@@ -12,12 +18,18 @@ const navItems = [
   { name: "Projects", href: "/projects", icon: MdTask },
   { name: "Users", href: "/users", icon: FiUsers },
   { name: "Clients", href: "/clients", icon: MdPeople },
-  { name: "Invoices", href: "/invoices", icon: MdReceiptLong }, // ← added
+  { name: "Invoices", href: "/invoices", icon: MdReceiptLong },
+  { name: "Expenses", href: "/expenses", icon: MdAttachMoney }, // ← added
 ];
 
 const Sidebar = () => {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+
+  const isActive = (href) => {
+    if (href === "/") return pathname === "/";
+    return pathname === href || pathname.startsWith(href + "/");
+  };
 
   return (
     <div
@@ -45,17 +57,17 @@ const Sidebar = () => {
       {/* Nav Links */}
       <nav className="flex flex-col gap-1 mt-4 flex-1">
         {navItems.map(({ name, href, icon: Icon }) => {
-          const isActive = pathname === href;
+          const active = isActive(href);
           return (
             <Link
               key={name}
               href={href}
               className={`flex items-center gap-3 p-3 mx-2 rounded-lg transition-colors duration-200 ${
-                isActive
-                  ? "bg-blue-100 text-blue-600 font-medium"
+                active
+                  ? "bg-emerald-100 text-emerald-700 font-medium"
                   : "hover:bg-gray-100 text-gray-600"
               }`}
-              aria-current={isActive ? "page" : undefined}
+              aria-current={active ? "page" : undefined}
             >
               <div className="flex-shrink-0">
                 <Icon size={22} />

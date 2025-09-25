@@ -1,63 +1,195 @@
-// lib/projects-utils.js
+// app/lib/projects-utils.js
 
-/* ---------- Helpers ---------- */
-export const getStatusColor = (status) => {
-  if (status === "In progress") return "bg-yellow-100 text-yellow-800";
-  if (status === "Completed") return "bg-green-100 text-green-800";
-  return "bg-gray-100 text-gray-800";
-};
+/* -------------------------------------------------------------------------- */
+/* Basics                                                                     */
+/* -------------------------------------------------------------------------- */
 
-export const palette = ["bg-red-500", "bg-green-500", "bg-purple-500", "bg-yellow-500", "bg-blue-500"];
-
-export const initialsOf = (name = "NA") =>
-  name.split(" ").map((n) => n[0] || "").join("").slice(0, 2).toUpperCase();
-
-export const normalizeId = (obj) => {
-  const raw = obj?.id ?? obj?._id ?? obj?.value ?? obj?.email ?? obj?.name;
-  return String(raw ?? "");
-};
-
-export const normalizeArrayWithId = (arr) =>
-  (Array.isArray(arr) ? arr : []).map((x) => ({ ...x, id: normalizeId(x) }));
-
-export const currency = (n) => {
-  const v = Number(n) || 0;
-  return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
-
-export const emptyService = () => ({
-  description: "",
-  unitPrice: "",
-  unit: "",
-  totalPrice: 0,
-  offerPrice: "",
-  note: "",
-});
-
-/* ---------- API Helpers ---------- */
-export async function getProjects() {
-  try {
-    const res = await fetch("/api/projects/list", { cache: "no-store" });
-    if (!res.ok) throw new Error("Failed to fetch projects");
-    return await res.json();
-  } catch (e) {
-    console.error(e);
-    return [];
-  }
+export function currency(n = 0) {
+  const x = Number(n || 0);
+  return x.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 }
 
-export async function saveProject(payload, isEdit = false) {
-  try {
-    const url = isEdit ? "/api/projects/update" : "/api/projects/create";
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    if (!res.ok) throw new Error("Failed to save project");
-    return await res.json();
-  } catch (e) {
-    console.error(e);
-    return { success: false };
+export function normalizeId(v) {
+  if (!v) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "object") {
+    if (v.id) return String(v.id);
+    if (v._id) return String(v._id);
+    // Mongo style {_id: { $oid: "..." }}
+    if (v.$oid) return String(v.$oid);
   }
+  return String(v);
+}
+
+export function normalizeArrayWithId(arr) {
+  return (Array.isArray(arr) ? arr : []).map((x) => {
+    const id = normalizeId(x);
+    const name =
+      x?.name ??
+      x?.companyName ??
+      x?.clientName ??
+      x?.title ??
+      x?.email ??
+      "Unnamed";
+    return { ...x, id: String(id), _id: String(id), name: String(name) };
+  });
+}
+
+export function isLikelyObjectId(v) {
+  return /^[a-fA-F0-9]{24}$/.test(String(v || ""));
+}
+
+/* -------------------------------------------------------------------------- */
+/* UI helpers used by table/components                                        */
+/* -------------------------------------------------------------------------- */
+
+export const palette = {
+  emerald: "text-emerald-700 bg-emerald-50 border-emerald-200",
+  sky: "text-sky-700 bg-sky-50 border-sky-200",
+  amber: "text-amber-700 bg-amber-50 border-amber-200",
+  rose: "text-rose-700 bg-rose-50 border-rose-200",
+  zinc: "text-zinc-700 bg-zinc-50 border-zinc-200",
+};
+
+export function getStatusColor(status) {
+  const s = String(status || "").toLowerCase();
+  if (s.includes("progress")) return palette.sky;
+  if (s.includes("pending")) return palette.amber;
+  if (s.includes("completed") || s.includes("done")) return palette.emerald;
+  if (s.includes("hold") || s.includes("cancel")) return palette.rose;
+  if (s.includes("revision")) return palette.amber;
+  return palette.zinc;
+}
+
+export function initialsOf(name) {
+  if (!name) return "";
+  const parts = String(name).trim().split(/\s+/).slice(0, 2);
+  return parts.map((p) => p[0]?.toUpperCase() || "").join("");
+}
+
+/* -------------------------------------------------------------------------- */
+/* Services helpers                                                           */
+/* -------------------------------------------------------------------------- */
+
+export function emptyService() {
+  return {
+    description: "",
+    unitPrice: "",
+    unit: "",
+    totalPrice: 0,
+    offerPrice: "",
+    cost: "",      // optional per-service cost support
+    note: "",
+  };
+}
+
+function normalizeServices(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .filter((s) => s && typeof s.description === "string" && s.description.trim().length)
+    .map((s) => {
+      const unit = Number(s.unit) || 0;
+      const unitPrice = Number(s.unitPrice) || 0;
+      const totalPrice = unit * unitPrice;
+      const offer =
+        s.offerPrice !== undefined && s.offerPrice !== null && s.offerPrice !== ""
+          ? Number(s.offerPrice) || 0
+          : undefined;
+      const note =
+        typeof s.note === "string" && s.note.trim() ? s.note.trim() : undefined;
+      const cost = Number(s.cost) || 0; // per-service cost (optional)
+      return {
+        description: s.description.trim(),
+        unit,
+        unitPrice,
+        totalPrice,
+        ...(offer !== undefined ? { offerPrice: offer } : {}),
+        ...(note !== undefined ? { note } : {}),
+        ...(cost ? { cost } : {}),
+      };
+    });
+}
+
+/* -------------------------------------------------------------------------- */
+/* Network helpers (create/update + list)                                     */
+/* -------------------------------------------------------------------------- */
+
+export async function saveProject(payload, isEdit = false) {
+  const cleaned = { ...payload, services: normalizeServices(payload.services || []) };
+
+  // totalCost fallback to sum of service.cost when not provided
+  if (cleaned.totalCost == null || cleaned.totalCost === "") {
+    const servicesCost = cleaned.services.reduce(
+      (sum, s) => sum + (Number(s.cost) || 0),
+      0
+    );
+    cleaned.totalCost = servicesCost;
+  }
+
+  const url = isEdit ? "/api/projects/update" : "/api/projects/create";
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cleaned),
+  });
+
+  const text = await res.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { error: text || "" };
+  }
+
+  if (!res.ok) {
+    const msg = data?.error || `Request failed (${res.status})`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+const toArray = (json) => {
+  if (Array.isArray(json)) return json;
+  if (Array.isArray(json?.rows)) return json.rows;
+  if (Array.isArray(json?.data)) return json.data;
+  return [];
+};
+
+/**
+ * getProjects(options)
+ * Fetch projects for pages/components.
+ * options:
+ *   q?: string
+ *   page?: number
+ *   perPage?: number
+ *   light?: boolean   -> /api/projects?light=1
+ *   includeServices?: boolean (ignored when light=true)
+ */
+export async function getProjects(options = {}) {
+  const {
+    q = "",
+    page = 1,
+    perPage = 25,
+    light = false,
+    includeServices = false,
+  } = options;
+
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (page) params.set("page", String(page));
+  if (perPage) params.set("perPage", String(perPage));
+  if (light) params.set("light", "1");
+  if (!light && includeServices) params.set("include", "services");
+
+  const url = `/api/projects${params.toString() ? `?${params.toString()}` : ""}`;
+  const res = await fetch(url, { cache: "no-store" });
+  const json = await res.json().catch(() => ({}));
+  return toArray(json);
+}
+
+export async function getProjectsLight(opts = {}) {
+  return getProjects({ ...opts, light: true });
 }

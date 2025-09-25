@@ -1,3 +1,4 @@
+// app/api/projects/create/route.js
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
@@ -19,11 +20,13 @@ function normalizeServices(arr) {
         ? Number(s.offerPrice) || 0
         : undefined;
       const note = typeof s.note === "string" && s.note.trim() ? s.note.trim() : undefined;
+      const cost = Number(s.cost) || 0; // NEW
       return {
         description: s.description.trim(),
         unit,
         unitPrice,
-        totalPrice, // canonical
+        totalPrice,
+        cost, // NEW
         ...(offer !== undefined ? { offerPrice: offer } : {}),
         ...(note !== undefined ? { note } : {}),
       };
@@ -40,8 +43,9 @@ export async function POST(req) {
       startDate,
       dueDate,
       services = [],
-      totalCost = 0,
+      totalCost = 0, // will be overridden by services cost sum if present
       status = "In progress",
+      sisterConcern = "", // NEW
     } = body;
 
     if (!name || !clientId) {
@@ -64,12 +68,16 @@ export async function POST(req) {
     const envId = formatEnvId(new Date(), counterDoc.seq);
 
     const cleaned = normalizeServices(services);
+
     const totalAmount = cleaned.reduce((sum, s) => {
       const val = s.offerPrice !== undefined ? s.offerPrice : s.totalPrice;
       return sum + (Number(val) || 0);
     }, 0);
 
-    const costNum = Number(totalCost) || 0;
+    // NEW: prefer per-service cost sum; fall back to provided totalCost
+    const costFromServices = cleaned.reduce((sum, s) => sum + (Number(s.cost) || 0), 0);
+    const costNum = costFromServices > 0 ? costFromServices : (Number(totalCost) || 0);
+
     const profit = totalAmount - costNum;
 
     const doc = {
@@ -86,6 +94,7 @@ export async function POST(req) {
       totalAmount,
       totalCost: costNum,
       profit,
+      sisterConcern, // NEW
       createdAt: new Date(),
       updatedAt: new Date(),
     };
