@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
+import { requireAdmin } from "@/lib/requireAdmin";
 
 /* ---------- Small UI helpers ---------- */
 function StatusPill({ status }) {
@@ -60,8 +61,26 @@ function AvatarBadge({ name }) {
   );
 }
 
+/* ---------- Robust helpers ---------- */
+const toArray = (x) => {
+  if (Array.isArray(x)) return x;
+  if (Array.isArray(x?.data)) return x.data;
+  if (Array.isArray(x?.items)) return x.items;
+  if (Array.isArray(x?.results)) return x.results;
+  if (Array.isArray(x?.rows)) return x.rows;
+  if (Array.isArray(x?.clients)) return x.clients;
+  if (Array.isArray(x?.users)) return x.users;
+  return [];
+};
+const sameId = (a, b) => String(a ?? "") === String(b ?? "");
+const fmtMoney = (n) =>
+  Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
 /* ---------- Page ---------- */
 export default async function ProjectDetailsPage(props) {
+  // ⟵ admin gate
+  await requireAdmin();
+
   const { id } = await props.params;
 
   const projectURL = await absoluteUrl(`/api/projects/${encodeURIComponent(id)}`);
@@ -94,19 +113,18 @@ export default async function ProjectDetailsPage(props) {
   }
 
   const project = await projRes.json();
-  const clients = clientsRes.ok ? await clientsRes.json() : [];
-  const users = usersRes.ok ? await usersRes.json() : [];
+  const rawClients = clientsRes.ok ? await clientsRes.json() : [];
+  const rawUsers = usersRes.ok ? await usersRes.json() : [];
+
+  const clients = toArray(rawClients);
+  const users = toArray(rawUsers);
 
   const clientName =
-    clients.find((c) => String(c._id) === String(project.clientId))?.name ||
-    clients.find((c) => String(c.id) === String(project.clientId))?.name ||
-    "—";
+    clients.find((c) => sameId(c._id, project.clientId) || sameId(c.id, project.clientId))?.name || "—";
 
   const assignedUserNames = Array.isArray(project.assignedUserIds)
     ? project.assignedUserIds
-        .map((uid) => users.find(
-          (u) => String(u._id) === String(uid) || String(u.id) === String(uid)
-        )?.name)
+        .map((uid) => users.find((u) => sameId(u._id, uid) || sameId(u.id, uid))?.name)
         .filter(Boolean)
     : [];
 
@@ -116,13 +134,12 @@ export default async function ProjectDetailsPage(props) {
   const marginPct = amount > 0 ? Math.round((profit / amount) * 100) : null;
 
   const services = Array.isArray(project.services) ? project.services : [];
-  const fmt = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  /* -------- Server Action: update status (Pending | In-progress | Completed | On hold | Canceled | Revision) -------- */
+  /* -------- Server Action: update status -------- */
   async function updateProjectStatus(formData) {
     "use server";
     const status = String(formData.get("status") || "");
-    const allowed = ["Pending","In-progress","Completed","On hold","Canceled","Revision","In progress"]; // allow both spellings
+    const allowed = ["Pending","In-progress","Completed","On hold","Canceled","Revision","In progress"];
     if (!allowed.includes(status)) return;
     await fetch(projectURL, {
       method: "PATCH",
@@ -136,7 +153,7 @@ export default async function ProjectDetailsPage(props) {
   return (
     <main className="min-h-screen bg-[radial-gradient(1000px_600px_at_10%_-10%,rgba(16,185,129,0.08),transparent),radial-gradient(800px_500px_at_90%_-20%,rgba(59,130,246,0.08),transparent)]">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-10">
-        {/* Top header (CHANGED: overflow-visible so dropdown can overflow outside) */}
+        {/* Top header */}
         <div className="mb-8 overflow-visible rounded-3xl border border-gray-200/60 bg-white shadow-[0_12px_32px_-24px_rgba(0,0,0,0.25)]">
           <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between p-6 sm:p-8">
             <div>
@@ -144,7 +161,7 @@ export default async function ProjectDetailsPage(props) {
                 <h1 className="text-3xl font-extrabold tracking-tight text-gray-950">{project.name}</h1>
                 <StatusPill status={project.status} />
 
-                {/* Update Status dropdown (button -> menu; auto-submit) */}
+                {/* Update Status dropdown */}
                 <form action={updateProjectStatus} className="relative">
                   <details className="group relative">
                     <summary
@@ -155,11 +172,7 @@ export default async function ProjectDetailsPage(props) {
                       <ChevronDown className="h-4 w-4 text-gray-500 transition-transform group-open:rotate-180" />
                     </summary>
 
-                    {/* dropdown (will now overflow outside the card just fine) */}
-                    <div
-                      role="menu"
-                      className="absolute z-40 mt-2 w-44 rounded-xl border border-gray-200 bg-white p-1 shadow-lg"
-                    >
+                    <div role="menu" className="absolute z-40 mt-2 w-44 rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
                       {["Pending","In-progress","Completed","On hold","Canceled","Revision"].map(opt => (
                         <button
                           key={opt}
@@ -328,11 +341,11 @@ export default async function ProjectDetailsPage(props) {
                       return (
                         <tr key={i} className="align-top">
                           <td className="px-3 py-2 text-gray-900">{s.description}</td>
-                          <td className="px-3 py-2 text-right">${fmt(unitPrice)}</td>
+                          <td className="px-3 py-2 text-right">${fmtMoney(unitPrice)}</td>
                           <td className="px-3 py-2 text-right">{unit}</td>
-                          <td className="px-3 py-2 text-right">${fmt(totalAuto)}</td>
+                          <td className="px-3 py-2 text-right">${fmtMoney(totalAuto)}</td>
                           <td className="px-3 py-2 text-right">
-                            {offer !== null ? `$${fmt(offer)}` : <span className="text-gray-400">—</span>}
+                            {offer !== null ? `$${fmtMoney(offer)}` : <span className="text-gray-400">—</span>}
                           </td>
                           <td className="px-3 py-2 text-gray-600">{s.note || <span className="text-gray-400">—</span>}</td>
                         </tr>
@@ -342,9 +355,9 @@ export default async function ProjectDetailsPage(props) {
                   <tfoot>
                     <tr className="border-t border-gray-100">
                       <td className="px-3 py-3 text-right font-medium text-gray-600" colSpan={3}>Subtotal</td>
-                      <td className="px-3 py-3 text-right font-semibold text-gray-900">${fmt(amount)}</td>
+                      <td className="px-3 py-3 text-right font-semibold text-gray-900">${fmtMoney(amount)}</td>
                       <td className="px-3 py-3 text-right font-medium text-gray-600">Cost</td>
-                      <td className="px-3 py-3 text-left font-semibold text-gray-900">${fmt(cost)}</td>
+                      <td className="px-3 py-3 text-left font-semibold text-gray-900">${fmtMoney(cost)}</td>
                     </tr>
                   </tfoot>
                 </table>

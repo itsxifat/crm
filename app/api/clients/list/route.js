@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { connectMongoose } from "@/lib/mongoose";
 import Client from "@/models/Client";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,8 @@ export const revalidate = 0;
 
 export async function GET(req) {
   try {
+    await requireAdmin(); // ⟵ blocks non-admin
+
     const { searchParams } = new URL(req.url);
     const q = (searchParams.get("q") || "").trim();
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
@@ -37,20 +40,13 @@ export async function GET(req) {
     }
 
     // Projection: keep only light fields (skip binary/file subdocs entirely)
-    const PROJECTION =
-      "companyName clientName email phone priority createdAt updatedAt"; // include _id by default
+    const PROJECTION = "companyName clientName email phone priority createdAt updatedAt"; // _id included by default
 
-    // Faster total:
-    // - If no filter => estimatedDocumentCount (very fast)
-    // - If filtered  => countDocuments(match)
-    const totalPromise = q
-      ? Client.countDocuments(match)
-      : Client.estimatedDocumentCount();
+    const totalPromise = q ? Client.countDocuments(match) : Client.estimatedDocumentCount();
 
-    // Query
     const rowsPromise = Client.find(match)
       .select(PROJECTION)
-      .sort({ createdAt: -1 }) // ensure index on createdAt for speed
+      .sort({ createdAt: -1 })
       .skip(skip)
       .limit(perPage)
       .lean()
@@ -58,7 +54,6 @@ export async function GET(req) {
 
     const [total, rows] = await Promise.all([totalPromise, rowsPromise]);
 
-    // Normalize for frontend
     const out = rows.map((c) => {
       const id = String(c._id);
       const name = (c.companyName && c.companyName.trim())
@@ -78,8 +73,9 @@ export async function GET(req) {
       };
     });
 
-    return NextResponse.json({ total, page, perPage, rows: out });
+    return NextResponse.json({ total, page, perPage, rows: out }, { status: 200 });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("clients/list GET error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
