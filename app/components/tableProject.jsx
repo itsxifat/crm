@@ -1,23 +1,156 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { createPortal } from "react-dom";
-import {
-  Search, ChevronDown, ChevronUp, SlidersHorizontal, MoreVertical,
-} from "lucide-react";
+import { Search, ChevronDown, ChevronUp, SlidersHorizontal, MoreVertical } from "lucide-react";
 import { getStatusColor, initialsOf, normalizeId, palette } from "@/lib/projects-utils";
 
-/**
- * Props:
- *  - data: Project[]
- *  - onDeleted?: (id: string) => void
- */
+/** Robust, ID-or-string tolerant table — pure JS (.jsx) */
 export default function TableProject({ data = [], onDeleted }) {
   const [sortOrder, setSortOrder] = useState("desc");
   const SortIcon = sortOrder === "desc" ? ChevronDown : ChevronUp;
-
   const toggleSortOrder = () => setSortOrder((v) => (v === "desc" ? "asc" : "desc"));
+
+  // Caches for optional ID->object lookups (plain JS objects)
+  const [clientMap, setClientMap] = useState({});
+  const [userMap, setUserMap] = useState({});
+
+  /** Collect only the IDs we truly need to resolve (when no name string is present) */
+  const needs = useMemo(() => {
+    const clientIds = new Set();
+    const userIds = new Set();
+
+    for (const row of data) {
+      // CLIENT: only add clientId if we don't already have a name string on the row
+      const clientNameString =
+        (typeof row?.client === "string" && row.client) ||
+        (row?.client && typeof row.client === "object" && row.client.name) ||
+        row?.clientName;
+
+      const clientId =
+        (row?.clientId && String(row.clientId)) ||
+        (row?.client && typeof row.client === "object" && (row.client._id || row.client.id));
+
+      if (!clientNameString && clientId) clientIds.add(String(clientId));
+
+      // USERS: prefer assignedTo objects; otherwise collect IDs from assignedUserIds
+      const assignedTo = Array.isArray(row?.assignedTo) ? row.assignedTo : [];
+      const alreadyHaveObjects = assignedTo.some((u) => typeof u === "object" && (u?.name || u?.email));
+
+      if (!alreadyHaveObjects) {
+        const ids = Array.isArray(row?.assignedUserIds) ? row.assignedUserIds : [];
+        for (const raw of ids) {
+          const id = String(
+            typeof raw === "object" ? (raw?._id || raw?.id || "") : raw || ""
+          ).trim();
+          if (id) userIds.add(id);
+        }
+      }
+    }
+
+    return {
+      clientIdsNeeded: Array.from(clientIds),
+      userIdsNeeded: Array.from(userIds),
+    };
+  }, [data]);
+
+  /** OPTIONAL: resolve clients only if we *only* have clientId but no client/clientName */
+  useEffect(() => {
+    let aborted = false;
+    async function go() {
+      if (needs.clientIdsNeeded.length === 0) return;
+
+      // If /api/clients/lookup exists, this enriches names when only clientId was sent.
+      // If it doesn't exist, client/clientName will still show when present; otherwise "—".
+      try {
+        const res = await fetch(`/api/clients/lookup?ids=${encodeURIComponent(needs.clientIdsNeeded.join(","))}`);
+        if (aborted) return;
+        if (res.ok) {
+          const json = await res.json();
+          const map = {};
+          for (const c of json?.clients || []) {
+            const id = String(c?._id || c?.id || "");
+            const name = String(c?.name || c?.companyName || c?.clientName || id);
+            if (id) map[id] = { id, name };
+          }
+          setClientMap((m) => ({ ...m, ...map }));
+        }
+      } catch {
+        // ignore — we'll just display "—" if there's truly no name
+      }
+    }
+    go();
+    return () => { aborted = true; };
+  }, [needs.clientIdsNeeded.join(",")]);
+
+  /** Resolve users when the row only has assignedUserIds (no objects) */
+  useEffect(() => {
+    let aborted = false;
+    async function go() {
+      if (needs.userIdsNeeded.length === 0) return;
+      try {
+        const res = await fetch("/api/users/list");
+        if (aborted) return;
+        if (res.ok) {
+          const json = await res.json();
+          const index = {};
+          for (const u of json || []) {
+            const id = String(u?._id || u?.id || "");
+            if (!id) continue;
+            index[id] = {
+              id,
+              name: u?.name || u?.fullName || u?.email || id,
+              email: u?.email || "",
+              avatarUrl: u?.avatarUrl || undefined,
+            };
+          }
+          const filtered = {};
+          for (const id of needs.userIdsNeeded) if (index[id]) filtered[id] = index[id];
+          setUserMap((m) => ({ ...m, ...filtered }));
+        }
+      } catch {
+        // ignore; we’ll fallback to IDs/initials
+      }
+    }
+    go();
+    return () => { aborted = true; };
+  }, [needs.userIdsNeeded.join(",")]);
+
+  /** Client display resolver: prefer strings; fallback to clientId lookup */
+  const clientDisplayOf = (row) => {
+    if (!row) return "—";
+    if (typeof row.client === "string" && row.client.trim()) return row.client.trim();
+    if (row.client && typeof row.client === "object" && row.client.name) return String(row.client.name);
+    if (row.clientName) return String(row.clientName);
+    const cid = row.clientId ? String(row.clientId) : (row.client && (row.client._id || row.client.id));
+    if (cid && clientMap[cid]?.name) return clientMap[cid].name;
+    return "—";
+  };
+
+  /** Assigned array for rendering bubbles: prefer objects; otherwise map IDs via userMap */
+  const assignedArrayOf = (row) => {
+    const list = Array.isArray(row?.assignedTo) ? row.assignedTo : [];
+    const hasObjects = list.length && list.every((u) => typeof u === "object");
+
+    if (hasObjects) {
+      return list.map((u, idx) => {
+        const id = String(u?._id || u?.id || `${row?.id || "row"}-u-${idx}`);
+        const name = String(u?.name || u?.fullName || u?.email || userMap[id]?.name || id);
+        const avatarUrl = u?.avatarUrl || userMap[id]?.avatarUrl || undefined;
+        return { id, name, avatarUrl };
+      });
+    }
+
+    const ids = Array.isArray(row?.assignedUserIds) ? row.assignedUserIds : [];
+    if (!ids.length) return [];
+    return ids.map((raw, idx) => {
+      const id = String(typeof raw === "object" ? (raw?._id || raw?.id || "") : raw || `${row?.id || "row"}-u-${idx}`);
+      const name = userMap[id]?.name || id;
+      const avatarUrl = userMap[id]?.avatarUrl || undefined;
+      return { id, name, avatarUrl };
+    });
+  };
 
   async function handleDelete(row) {
     const id = row?.id;
@@ -69,16 +202,15 @@ export default function TableProject({ data = [], onDeleted }) {
       {/* Table */}
       <div className="overflow-x-auto">
         <table className="min-w-full table-fixed divide-y divide-gray-200">
-          {/* Column sizing prevents width blowout */}
           <colgroup>
-            <col className="w-[120px]" />     {/* Project ID */}
-            <col className="w-[24%]" />       {/* Project Name */}
-            <col className="w-[20%]" />       {/* Client */}
-            <col className="sm:w-[18%]" />    {/* Assigned to (hidden <sm>) */}
-            <col className="w-[14%]" />       {/* Status */}
-            <col className="md:w-[14%]" />    {/* Due Date (hidden <md>) */}
-            <col className="lg:w-[12%]" />    {/* Amount (hidden <lg>) */}
-            <col className="w-[64px]" />      {/* Actions */}
+            <col className="w-[120px]" />
+            <col className="w-[24%]" />
+            <col className="w-[20%]" />
+            <col className="sm:w-[18%]" />
+            <col className="w-[14%]" />
+            <col className="md:w-[14%]" />
+            <col className="lg:w-[12%]" />
+            <col className="w-[64px]" />
           </colgroup>
 
           <thead className="bg-gray-50">
@@ -104,9 +236,12 @@ export default function TableProject({ data = [], onDeleted }) {
             ) : (
               data.map((row, i) => {
                 const key = row.id ?? i;
+                const clientDisplay = clientDisplayOf(row);
+                const assignedArray = assignedArrayOf(row);
+
                 return (
                   <tr key={key} className="hover:bg-gray-50 transition-colors">
-                    {/* ONLY Project ID navigates; allow breaking long IDs */}
+                    {/* Project ID */}
                     <Td>
                       <Link
                         href={`/projects/${encodeURIComponent(row.id)}`}
@@ -116,50 +251,46 @@ export default function TableProject({ data = [], onDeleted }) {
                       </Link>
                     </Td>
 
-                    {/* Wrap long values; never push width */}
-                    <Td>{row.name}</Td>
-                    <Td>{row.client}</Td>
+                    <Td>{row.name || "-"}</Td>
+                    <Td>{clientDisplay}</Td>
 
-                    {/* Assigned to: wrap avatars */}
+                    {/* Assigned to */}
                     <Td className="hidden sm:table-cell align-top">
                       <div className="flex flex-wrap gap-1">
-                        {(row.assignedTo ?? []).map((u) => {
-                          const id = normalizeId(u);
-                          const init = initialsOf(u.name);
-                          const color = palette[Math.abs((id?.charCodeAt?.(0) || 0)) % palette.length];
-                          return (
-                            <div
-                              key={id}
-                              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white ${color}`}
-                              title={u.name}
-                            >
-                              {init}
-                            </div>
-                          );
-                        })}
+                        {assignedArray.length === 0 ? (
+                          <span className="text-gray-400 text-xs">—</span>
+                        ) : (
+                          assignedArray.map((u, idx) => {
+                            const id = normalizeId(u.id) || `${key}-u-${idx}`;
+                            const init = (u.name && initialsOf(u.name)) || "U";
+                            const color = palette[Math.abs((id?.charCodeAt?.(0) || 0)) % palette.length] || "bg-gray-400";
+                            return (
+                              <div
+                                key={id}
+                                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white ${color}`}
+                                title={u.name || u.id}
+                              >
+                                {init}
+                              </div>
+                            );
+                          })
+                        )}
                       </div>
                     </Td>
 
-                    {/* STATUS — force single line */}
+                    {/* Status */}
                     <Td noWrap className="align-top">
-                      <span
-                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(row.status)} whitespace-nowrap`}
-                      >
-                        {row.status}
+                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(row.status)} whitespace-nowrap`}>
+                        {row.status || "—"}
                       </span>
                     </Td>
 
-                    <Td className="hidden md:table-cell text-gray-500 align-top">{row.dueDate}</Td>
+                    <Td className="hidden md:table-cell text-gray-500 align-top">{row.dueDate || "—"}</Td>
                     <Td className="hidden lg:table-cell align-top">
                       {Number(row.totalAmount || 0).toFixed(2)}
                     </Td>
 
-                    {/* Actions */}
-                    <ActionsCell
-                      rowKey={key}
-                      row={row}
-                      onDelete={() => handleDelete(row)}
-                    />
+                    <ActionsCell rowKey={key} row={row} onDelete={() => handleDelete(row)} />
                   </tr>
                 );
               })
@@ -171,7 +302,6 @@ export default function TableProject({ data = [], onDeleted }) {
   );
 }
 
-/* ------------------------- Actions cell ------------------------- */
 function ActionsCell({ rowKey, row, onDelete }) {
   const btnRef = useRef(null);
   const [open, setOpen] = useState(false);
@@ -254,12 +384,9 @@ function ActionsCell({ rowKey, row, onDelete }) {
   );
 }
 
-/* ----------------------------- Small helpers ----------------------------- */
 function Th({ children, className = "" }) {
   return (
-    <th
-      className={`px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider ${className}`}
-    >
+    <th className={`px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider ${className}`}>
       <span className="block min-w-0 truncate">{children}</span>
     </th>
   );
@@ -269,9 +396,7 @@ function Td({ children, className = "", noWrap = false }) {
   const wrapClass = noWrap ? "whitespace-nowrap" : "whitespace-normal break-words hyphens-auto";
   return (
     <td className={`px-4 sm:px-6 py-4 align-top text-sm text-gray-900 ${className}`}>
-      <div className={`min-w-0 ${wrapClass}`}>
-        {children}
-      </div>
+      <div className={`min-w-0 ${wrapClass}`}>{children}</div>
     </td>
   );
 }

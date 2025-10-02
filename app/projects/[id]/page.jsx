@@ -1,5 +1,9 @@
 // app/projects/[id]/page.jsx
+import Link from "next/link";
+import { revalidatePath } from "next/cache";
+import { requireAdmin } from "@/lib/requireAdmin";
 import { absoluteUrl } from "@/lib/absoluteUrl";
+import { cookies } from "next/headers";
 import ExportPDFButtonClient from "./ExportPDFButtonClient";
 import {
   Calendar,
@@ -11,9 +15,6 @@ import {
   BadgeDollarSign,
   ChevronDown,
 } from "lucide-react";
-import Link from "next/link";
-import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/requireAdmin";
 
 /* ---------- Small UI helpers ---------- */
 function StatusPill({ status }) {
@@ -49,8 +50,7 @@ function StatCard({ icon: Icon, label, value, hint }) {
 }
 
 function AvatarBadge({ name }) {
-  const initials = (name || "NA")
-    .split(" ").map((n) => n[0] || "").join("").slice(0, 2).toUpperCase();
+  const initials = (name || "NA").split(" ").map((n) => n[0] || "").join("").slice(0, 2).toUpperCase();
   const palette = ["bg-rose-500","bg-amber-500","bg-emerald-500","bg-cyan-500","bg-indigo-500","bg-purple-500"];
   const idx = name ? name.charCodeAt(0) % palette.length : 0;
   return (
@@ -61,7 +61,7 @@ function AvatarBadge({ name }) {
   );
 }
 
-/* ---------- Robust helpers ---------- */
+/* ---------- Helpers ---------- */
 const toArray = (x) => {
   if (Array.isArray(x)) return x;
   if (Array.isArray(x?.data)) return x.data;
@@ -73,24 +73,28 @@ const toArray = (x) => {
   return [];
 };
 const sameId = (a, b) => String(a ?? "") === String(b ?? "");
-const fmtMoney = (n) =>
-  Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtMoney = (n) => Number(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /* ---------- Page ---------- */
-export default async function ProjectDetailsPage(props) {
-  // ⟵ admin gate
+export default async function ProjectDetailsPage({ params }) {
   await requireAdmin();
 
-  const { id } = await props.params;
+  // ✅ Next.js 15: dynamic APIs are async
+  const { id } = await params;
+  const cookieStore = await cookies();
+  const cookieHeader = cookieStore.getAll().map((c) => `${c.name}=${c.value}`).join("; ");
 
+  // ✅ absoluteUrl is async in your setup
   const projectURL = await absoluteUrl(`/api/projects/${encodeURIComponent(id)}`);
   const clientsURL = await absoluteUrl("/api/clients/list");
   const usersURL = await absoluteUrl("/api/users/list");
 
+  const headers = { cookie: cookieHeader };
+
   const [projRes, clientsRes, usersRes] = await Promise.all([
-    fetch(projectURL, { cache: "no-store" }),
-    fetch(clientsURL, { cache: "no-store" }),
-    fetch(usersURL, { cache: "no-store" }),
+    fetch(projectURL, { cache: "no-store", headers }),
+    fetch(clientsURL, { cache: "no-store", headers }),
+    fetch(usersURL, { cache: "no-store", headers }),
   ]);
 
   if (!projRes.ok) {
@@ -113,26 +117,29 @@ export default async function ProjectDetailsPage(props) {
   }
 
   const project = await projRes.json();
-  const rawClients = clientsRes.ok ? await clientsRes.json() : [];
-  const rawUsers = usersRes.ok ? await usersRes.json() : [];
+  const clients = clientsRes.ok ? toArray(await clientsRes.json()) : [];
+  const users = usersRes.ok ? toArray(await usersRes.json()) : [];
 
-  const clients = toArray(rawClients);
-  const users = toArray(rawUsers);
-
+  // ✅ Prefer data already on the project; else resolve by id from lists
   const clientName =
-    clients.find((c) => sameId(c._id, project.clientId) || sameId(c.id, project.clientId))?.name || "—";
+    project.clientName ||
+    project.client ||
+    (clients.find((c) => sameId(c._id, project.clientId) || sameId(c.id, project.clientId))?.name) ||
+    "—";
 
-  const assignedUserNames = Array.isArray(project.assignedUserIds)
-    ? project.assignedUserIds
-        .map((uid) => users.find((u) => sameId(u._id, uid) || sameId(u.id, uid))?.name)
-        .filter(Boolean)
-    : [];
+  const assignedUserNames =
+    Array.isArray(project.assignedTo) && project.assignedTo.length
+      ? project.assignedTo.map((u) => u?.name || u?.id).filter(Boolean)
+      : Array.isArray(project.assignedUserIds)
+        ? project.assignedUserIds
+            .map((uid) => users.find((u) => sameId(u._id, uid) || sameId(u.id, uid))?.name || uid)
+            .filter(Boolean)
+        : [];
 
   const amount = Number(project.totalAmount || 0);
   const cost = Number(project.totalCost || 0);
   const profit = Number(typeof project.profit === "number" ? project.profit : amount - cost);
   const marginPct = amount > 0 ? Math.round((profit / amount) * 100) : null;
-
   const services = Array.isArray(project.services) ? project.services : [];
 
   /* -------- Server Action: update status -------- */
@@ -141,9 +148,13 @@ export default async function ProjectDetailsPage(props) {
     const status = String(formData.get("status") || "");
     const allowed = ["Pending","In-progress","Completed","On hold","Canceled","Revision","In progress"];
     if (!allowed.includes(status)) return;
-    await fetch(projectURL, {
+
+    const cookieStoreInner = await cookies();
+    const cookieHeaderInner = cookieStoreInner.getAll().map((c) => `${c.name}=${c.value}`).join("; ");
+
+    await fetch(await absoluteUrl(`/api/projects/${encodeURIComponent(id)}`), {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", cookie: cookieHeaderInner },
       body: JSON.stringify({ status }),
       cache: "no-store",
     }).catch(() => {});
@@ -160,7 +171,6 @@ export default async function ProjectDetailsPage(props) {
               <div className="flex flex-wrap items-center gap-3">
                 <h1 className="text-3xl font-extrabold tracking-tight text-gray-950">{project.name}</h1>
                 <StatusPill status={project.status} />
-
                 {/* Update Status dropdown */}
                 <form action={updateProjectStatus} className="relative">
                   <details className="group relative">
