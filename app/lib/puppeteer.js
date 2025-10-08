@@ -1,5 +1,5 @@
 // lib/puppeteer.js
-// Works locally (full puppeteer) and on Vercel (puppeteer-core + @sparticuz/chromium)
+// Cross-env Puppeteer launcher: local=puppeteer, Vercel=puppeteer-core + @sparticuz/chromium
 
 export async function launchBrowser() {
   const isVercel = !!process.env.VERCEL;
@@ -7,7 +7,6 @@ export async function launchBrowser() {
   if (isVercel) {
     const chromium = (await import("@sparticuz/chromium")).default;
     const puppeteer = await import("puppeteer-core");
-
     return puppeteer.launch({
       args: chromium.args,
       defaultViewport: chromium.defaultViewport,
@@ -23,14 +22,12 @@ export async function launchBrowser() {
   });
 }
 
-/** Render HTML to a PDF Buffer (waits for images). */
+/** Render HTML → PDF (Buffer). Also waits for images (logos/stamps) to load. */
 export async function htmlToPdfBuffer(html) {
   const browser = await launchBrowser();
   const page = await browser.newPage();
 
   await page.setContent(html, { waitUntil: "networkidle0" });
-
-  // Ensure all images finished (important for logos/stamps on Vercel)
   await page.evaluate(async () => {
     const imgs = Array.from(document.images || []);
     await Promise.all(

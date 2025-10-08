@@ -14,24 +14,29 @@ export const revalidate = 0;
 function getCurrencySymbol() {
   return process.env.CURRENCY_SYMBOL || "৳";
 }
+
 async function getOrigin() {
   const h = await headers();
   const proto = h.get("x-forwarded-proto") || (process.env.VERCEL ? "https" : "http");
   const host = h.get("x-forwarded-host") || h.get("host") || process.env.VERCEL_URL || "localhost:3000";
   return `${proto}://${host}`;
 }
+
 function nextInvoiceId(n = 6) {
   const abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let s = "";
   for (let i = 0; i < n; i++) s += abc[Math.floor(Math.random() * abc.length)];
   return `INV-${new Date().getFullYear()}-${s}`;
 }
+
 function clientDisplayName(c) {
   return (c?.companyName || c?.clientName || c?.name || c?.email || "Client").trim();
 }
+
 function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
 }
+
 function calcProjectTotal(p = {}) {
   if (p.totalAmount != null && !Number.isNaN(Number(p.totalAmount))) {
     return round2(p.totalAmount);
@@ -67,7 +72,7 @@ async function ensureInvoiceIndexes(db) {
       },
     ]);
   } catch {
-    // ignore index races
+    // ignore "already exists" races
   }
 }
 
@@ -112,9 +117,7 @@ async function createProjectInvoiceFromProject({ db, project, clientDoc, currenc
       clientDoc?.address?.state,
       clientDoc?.address?.postalCode,
       clientDoc?.address?.country,
-    ]
-      .filter(Boolean)
-      .join(", "),
+    ].filter(Boolean).join(", "),
   };
 
   const html = renderInvoiceHTML({
@@ -134,7 +137,7 @@ async function createProjectInvoiceFromProject({ db, project, clientDoc, currenc
     status: "Created",
     notes: `Auto-generated from project: ${project.name || project.id}`,
     paidStampUrl,
-    clientProjects: [],
+    clientProjects: [], // not used for project invoices
   });
 
   const pdfBuffer = await htmlToPdfBuffer(html);
@@ -214,16 +217,15 @@ export async function GET(req) {
   }
 }
 
-/* ---------- POST: create (project | client) with duplicate prevention ---------- */
+/* ---------- POST: create (project | client) with real data & duplicate prevention ---------- */
 export async function POST(req) {
-  // Parse exactly once
-  const body = await req.json().catch(() => ({}));
-
   try {
     const db = await getDb();
     await ensureInvoiceIndexes(db);
 
+    const body = await req.json().catch(() => ({}));
     const { source, sourceId, taxPct = 0 } = body;
+
     if (!source || !sourceId) {
       return NextResponse.json({ error: "source and sourceId are required" }, { status: 400 });
     }
@@ -233,13 +235,13 @@ export async function POST(req) {
     const paidStampUrl = `${origin}/paid-stamp.png`;
     const currency = getCurrencySymbol();
 
-    /* ---- PROJECT invoice ---- */
+    /* ---- PROJECT invoice (re-use if exists) ---- */
     if (source === "project") {
-      const pidQuery = ObjectId.isValid(sourceId) ? { _id: new ObjectId(sourceId) } : { id: sourceId };
-      const pidStr = ObjectId.isValid(sourceId) ? String(new ObjectId(sourceId)) : String(sourceId);
+      const pid = ObjectId.isValid(sourceId) ? { _id: new ObjectId(sourceId) } : { id: sourceId };
 
-      // reuse if exists
-      const existing = await db.collection("invoices").findOne({ source: "project", sourceId: pidStr });
+      const existing = await db
+        .collection("invoices")
+        .findOne({ source: "project", sourceId: String(pid._id || pid.id || sourceId) });
       if (existing) {
         return NextResponse.json({
           ok: true,
@@ -247,7 +249,7 @@ export async function POST(req) {
         });
       }
 
-      const project = await db.collection("projects").findOne(pidQuery);
+      const project = await db.collection("projects").findOne(pid);
       if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
       const clientKey = project.clientId || project.client || null;
@@ -277,13 +279,12 @@ export async function POST(req) {
       });
     }
 
-    /* ---- CLIENT invoice ---- */
+    /* ---- CLIENT invoice (re-use if exists; values from project invoices only) ---- */
     if (source === "client") {
       const cq = ObjectId.isValid(sourceId) ? { _id: new ObjectId(sourceId) } : { id: sourceId };
       const clientDoc = await db.collection("clients").findOne(cq);
       if (!clientDoc) return NextResponse.json({ error: "Client not found" }, { status: 404 });
 
-      // reuse client invoice
       const existingClientInv = await db
         .collection("invoices")
         .findOne({ source: "client", clientId: clientDoc._id });
@@ -294,7 +295,6 @@ export async function POST(req) {
         });
       }
 
-      // projects of this client (robust)
       const key = String(clientDoc._id || clientDoc.id || "");
       const projFilter = {
         $or: [
@@ -307,7 +307,7 @@ export async function POST(req) {
       };
       const projects = await db.collection("projects").find(projFilter).toArray();
 
-      // ensure each project has an invoice; reuse/create
+      // Ensure a project invoice exists per project
       const childInvoices = [];
       for (const p of projects) {
         const inv = await getOrCreateProjectInvoice({
@@ -322,6 +322,7 @@ export async function POST(req) {
       }
 
       const projectNameById = new Map(projects.map((p) => [String(p._id), p.name || "Unnamed Project"]));
+
       const clientProjects = childInvoices.map((ci) => {
         const total = round2(ci.total || 0);
         const paid = round2(ci.paidAmount || 0);
@@ -336,7 +337,6 @@ export async function POST(req) {
         };
       });
 
-      // per-project summary items
       const items = clientProjects.map((p) => ({
         orderId: p.projectId,
         description: p.name,
@@ -367,9 +367,7 @@ export async function POST(req) {
           clientDoc?.address?.state,
           clientDoc?.address?.postalCode,
           clientDoc?.address?.country,
-        ]
-          .filter(Boolean)
-          .join(", "),
+        ].filter(Boolean).join(", "),
       };
 
       const html = renderInvoiceHTML({
@@ -428,12 +426,13 @@ export async function POST(req) {
 
     return NextResponse.json({ error: "Invalid source" }, { status: 400 });
   } catch (e) {
-    // Handle unique index races gracefully
+    // unique-index race: return the existing doc
     if (e?.code === 11000) {
       try {
         const db = await getDb();
-        const origin = await getOrigin();
+        const body = await req.json().catch(() => ({}));
         const { source, sourceId } = body || {};
+        const origin = await getOrigin();
 
         if (source === "project") {
           const pid = ObjectId.isValid(sourceId) ? String(new ObjectId(sourceId)) : String(sourceId);
