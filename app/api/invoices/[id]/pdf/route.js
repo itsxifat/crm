@@ -1,3 +1,4 @@
+// app/api/invoices/[id]/pdf/route.js
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
@@ -18,6 +19,7 @@ export async function GET(_req, ctx) {
     if (!inv || !inv.pdf) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const data = inv.pdf?.buffer ? Buffer.from(inv.pdf.buffer) : Buffer.from(inv.pdf);
+
     return new NextResponse(data, {
       status: 200,
       headers: {

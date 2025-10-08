@@ -1,5 +1,5 @@
 // lib/puppeteer.js
-// Cross-env Puppeteer launcher: full Puppeteer locally, puppeteer-core + @sparticuz/chromium on Vercel.
+// Works locally (full puppeteer) and on Vercel (puppeteer-core + @sparticuz/chromium)
 
 export async function launchBrowser() {
   const isVercel = !!process.env.VERCEL;
@@ -7,10 +7,6 @@ export async function launchBrowser() {
   if (isVercel) {
     const chromium = (await import("@sparticuz/chromium")).default;
     const puppeteer = await import("puppeteer-core");
-
-    // Optional: force a known compatible Chrome channel on Vercel if needed
-    // chromium.setHeadlessMode = true; // default true
-    // chromium.setGraphicsMode = false;
 
     return puppeteer.launch({
       args: chromium.args,
@@ -20,7 +16,6 @@ export async function launchBrowser() {
     });
   }
 
-  // Local dev: use full Puppeteer
   const puppeteer = await import("puppeteer");
   return puppeteer.launch({
     headless: "new",
@@ -28,15 +23,14 @@ export async function launchBrowser() {
   });
 }
 
-/** Render HTML to a PDF buffer (works both locally and on Vercel). */
+/** Render HTML to a PDF Buffer (waits for images). */
 export async function htmlToPdfBuffer(html) {
   const browser = await launchBrowser();
   const page = await browser.newPage();
 
-  // Load HTML and wait for network to be idle.
   await page.setContent(html, { waitUntil: "networkidle0" });
 
-  // If your invoice uses images (e.g., logo/stamp), wait for them explicitly:
+  // Ensure all images finished (important for logos/stamps on Vercel)
   await page.evaluate(async () => {
     const imgs = Array.from(document.images || []);
     await Promise.all(
@@ -51,7 +45,7 @@ export async function htmlToPdfBuffer(html) {
     );
   });
 
-  const pdfBuffer = await page.pdf({
+  const pdf = await page.pdf({
     format: "A4",
     printBackground: true,
     margin: { top: "14mm", bottom: "16mm", left: "12mm", right: "12mm" },
@@ -59,5 +53,5 @@ export async function htmlToPdfBuffer(html) {
 
   await page.close();
   await browser.close();
-  return pdfBuffer;
+  return pdf;
 }
