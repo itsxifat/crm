@@ -1,13 +1,32 @@
+// app/api/invoices/route.js  (or your current path)
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
-import puppeteer from "puppeteer";
 import { renderInvoiceHTML, formatMoney } from "./_template";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+/* ---------- Puppeteer launcher (Vercel + Local) ---------- */
+async function launchBrowser() {
+  if (process.env.VERCEL) {
+    const chromium = (await import("@sparticuz/chromium")).default;
+    const puppeteer = await import("puppeteer-core");
+    return puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: true,
+    });
+  }
+  const puppeteer = await import("puppeteer");
+  return puppeteer.launch({
+    headless: "new",
+    args: ["--no-sandbox", "--disable-setuid-sandbox"],
+  });
+}
 
 /* ---------- helpers ---------- */
 function getCurrencySymbol() {
@@ -61,17 +80,21 @@ async function ensureInvoiceIndexes(db) {
         key: { source: 1, sourceId: 1 },
         name: "uniq_project_invoice",
         unique: true,
+        background: true,
         partialFilterExpression: { source: "project", sourceId: { $exists: true } },
       },
       {
         key: { source: 1, clientId: 1 },
         name: "uniq_client_invoice",
         unique: true,
+        background: true,
         partialFilterExpression: { source: "client", clientId: { $exists: true } },
       },
     ]);
-  } catch {
-    // ignore "already exists" races
+  } catch (err) {
+    if (!/E11000|already exists/i.test(String(err?.message || ""))) {
+      console.warn("ensureInvoiceIndexes warning:", err?.message || err);
+    }
   }
 }
 
@@ -116,7 +139,9 @@ async function createProjectInvoiceFromProject({ db, project, clientDoc, currenc
       clientDoc?.address?.state,
       clientDoc?.address?.postalCode,
       clientDoc?.address?.country,
-    ].filter(Boolean).join(", "),
+    ]
+      .filter(Boolean)
+      .join(", "),
   };
 
   const html = renderInvoiceHTML({
@@ -139,10 +164,7 @@ async function createProjectInvoiceFromProject({ db, project, clientDoc, currenc
     clientProjects: [], // not used for project invoices
   });
 
-  const browser = await puppeteer.launch({
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    headless: "new",
-  });
+  const browser = await launchBrowser();
   const page = await browser.newPage();
   await page.setContent(html, { waitUntil: "networkidle0" });
   const pdfBuffer = await page.pdf({
@@ -228,14 +250,16 @@ export async function GET(req) {
   }
 }
 
-/* ---------- POST: create (project | client) with real data & duplicate prevention ---------- */
+/* ---------- POST: create (project | client), reuse if exists ---------- */
 export async function POST(req) {
+  // Parse the body ONCE to avoid re-read issues on serverless
+  const parsedBody = await req.json().catch(() => ({}));
+
   try {
     const db = await getDb();
     await ensureInvoiceIndexes(db);
 
-    const body = await req.json().catch(() => ({}));
-    const { source, sourceId, taxPct = 0 } = body;
+    const { source, sourceId, taxPct = 0 } = parsedBody;
 
     if (!source || !sourceId) {
       return NextResponse.json({ error: "source and sourceId are required" }, { status: 400 });
@@ -248,12 +272,13 @@ export async function POST(req) {
 
     /* ---- PROJECT invoice (re-use if exists) ---- */
     if (source === "project") {
-      const pid = ObjectId.isValid(sourceId) ? { _id: new ObjectId(sourceId) } : { id: sourceId };
+      // normalize lookup key
+      const pidQuery = ObjectId.isValid(sourceId) ? { _id: new ObjectId(sourceId) } : { id: sourceId };
+      const normalizedSourceId = ObjectId.isValid(sourceId) ? String(new ObjectId(sourceId)) : String(sourceId);
 
-      // If project invoice already exists, return it
       const existing = await db
         .collection("invoices")
-        .findOne({ source: "project", sourceId: String(pid._id || pid.id || sourceId) });
+        .findOne({ source: "project", sourceId: normalizedSourceId });
       if (existing) {
         return NextResponse.json({
           ok: true,
@@ -261,8 +286,7 @@ export async function POST(req) {
         });
       }
 
-      // Otherwise create from project doc
-      const project = await db.collection("projects").findOne(pid);
+      const project = await db.collection("projects").findOne(pidQuery);
       if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
       const clientKey = project.clientId || project.client || null;
@@ -292,13 +316,13 @@ export async function POST(req) {
       });
     }
 
-    /* ---- CLIENT invoice (re-use if exists; values from project invoices only) ---- */
+    /* ---- CLIENT invoice (re-use if exists; aggregate child project invoices) ---- */
     if (source === "client") {
       const cq = ObjectId.isValid(sourceId) ? { _id: new ObjectId(sourceId) } : { id: sourceId };
       const clientDoc = await db.collection("clients").findOne(cq);
       if (!clientDoc) return NextResponse.json({ error: "Client not found" }, { status: 404 });
 
-      // If client invoice exists for this clientId, return it
+      // Reuse client invoice if any
       const existingClientInv = await db
         .collection("invoices")
         .findOne({ source: "client", clientId: clientDoc._id });
@@ -322,7 +346,7 @@ export async function POST(req) {
       };
       const projects = await db.collection("projects").find(projFilter).toArray();
 
-      // Ensure each project has an invoice; reuse or create; build clientProjects from those invoices only
+      // Ensure/reuse each project invoice then aggregate
       const childInvoices = [];
       for (const p of projects) {
         const inv = await getOrCreateProjectInvoice({
@@ -348,11 +372,10 @@ export async function POST(req) {
           total,
           paid,
           due,
-          services: [], // you can fill from projects if your template needs it
+          services: [],
         };
       });
 
-      // Client invoice items = per-project summary rows
       const items = clientProjects.map((p) => ({
         orderId: p.projectId,
         description: p.name,
@@ -383,7 +406,9 @@ export async function POST(req) {
           clientDoc?.address?.state,
           clientDoc?.address?.postalCode,
           clientDoc?.address?.country,
-        ].filter(Boolean).join(", "),
+        ]
+          .filter(Boolean)
+          .join(", "),
       };
 
       const html = renderInvoiceHTML({
@@ -403,13 +428,10 @@ export async function POST(req) {
         dueTotal,
         status,
         paidStampUrl,
-        clientProjects, // for your detailed pages
+        clientProjects,
       });
 
-      const browser = await puppeteer.launch({
-        args: ["--no-sandbox", "--disable-setuid-sandbox"],
-        headless: "new",
-      });
+      const browser = await launchBrowser();
       const page = await browser.newPage();
       await page.setContent(html, { waitUntil: "networkidle0" });
       const pdfBuffer = await page.pdf({
@@ -454,12 +476,11 @@ export async function POST(req) {
 
     return NextResponse.json({ error: "Invalid source" }, { status: 400 });
   } catch (e) {
-    // In case two requests race and hit the unique index, return the existing doc
+    // If unique index race triggers, return existing doc (no second req.json()!)
     if (e?.code === 11000) {
       try {
         const db = await getDb();
-        const body = await req.json().catch(() => ({}));
-        const { source, sourceId } = body || {};
+        const { source, sourceId } = parsedBody;
         const origin = await getOrigin();
 
         if (source === "project") {
