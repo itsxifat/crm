@@ -40,7 +40,6 @@
     "tailwindcss": "^4",
     "puppeteer": "^24.2.0"
   },
-  "engines": {
-    "node": ">=18.20.0"
-  }
+  "engines": { "node": "20.x" }
+
 }
