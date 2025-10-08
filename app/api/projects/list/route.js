@@ -7,13 +7,12 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const dateStr = (d) => (d ? new Date(d).toISOString().slice(0, 10) : "");
-const isValidId = (v) => {
-  try {
-    return v && ObjectId.isValid(String(v));
-  } catch {
-    return false;
-  }
-};
+
+function toIdOrString(v) {
+  if (!v) return null;
+  const s = String(v);
+  return ObjectId.isValid(s) ? new ObjectId(s) : s;
+}
 
 export async function GET(req) {
   try {
@@ -26,15 +25,15 @@ export async function GET(req) {
       .split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
     const includeServices = include.includes("services");
     const debug  = url.searchParams.get("debug") === "1";
+    const clientIdParam = (url.searchParams.get("clientId") || "").trim();
 
     const db = await getDb();
 
-    // prefer "projects" collection; fall back to "project" if needed
+    // prefer "projects"; fall back to "project" if needed
     const colls = await db.listCollections().toArray();
     const hasProjects = colls.some(c => c.name === "projects");
     const hasProject  = colls.some(c => c.name === "project");
-    const collName = hasProjects ? "projects" : (hasProject ? "project" : "projects");
-    const coll = db.collection(collName);
+    const coll = db.collection(hasProjects ? "projects" : (hasProject ? "project" : "projects"));
 
     // ---- filter/search (id, name) ----
     const filter = {};
@@ -43,16 +42,44 @@ export async function GET(req) {
       filter.$or = [{ id: rx }, { name: rx }];
     }
 
+    // ---- robust clientId filter (supports ObjectId + string, and fields clientId/client) ----
+    if (clientIdParam) {
+      const key = toIdOrString(clientIdParam);
+      const ors = [];
+
+      if (key instanceof ObjectId) {
+        ors.push(
+          { clientId: key }, { client: key },
+          { clientId: String(key) }, { client: String(key) }
+        );
+      } else {
+        ors.push({ clientId: key }, { client: key });
+        if (ObjectId.isValid(clientIdParam)) {
+          const asObj = new ObjectId(clientIdParam);
+          ors.push({ clientId: asObj }, { client: asObj }, { clientId: clientIdParam }, { client: clientIdParam });
+        }
+      }
+
+      if (ors.length) {
+        if (filter.$or) {
+          filter.$and = [{ $or: filter.$or }, { $or: ors }];
+          delete filter.$or;
+        } else {
+          filter.$or = ors;
+        }
+      }
+    }
+
     const total = await coll.countDocuments(filter).catch(() => coll.estimatedDocumentCount());
 
-    // ---- aggregation pipeline: LOOKUP clients + users ----
+    // ---- aggregation pipeline: LOOKUP client (robust) + users ----
     const pipeline = [
       { $match: filter },
       { $sort: { createdAt: -1 } },
       { $skip: skip },
       { $limit: perPage },
 
-      // ensure arrays for lookups
+      // Ensure arrays for user lookup later
       {
         $addFields: {
           assignedUserIds: {
@@ -61,16 +88,67 @@ export async function GET(req) {
               "$assignedUserIds",
               []
             ]
+          },
+          // Build a single comparable client key (string) from either clientId or client
+          _clientKeyStr: {
+            $let: {
+              vars: {
+                cid: { $ifNull: ["$clientId", null] },
+                c:   { $ifNull: ["$client",   null] }
+              },
+              in: {
+                $cond: [
+                  { $ne: ["$$cid", null] },
+                  { $toString: "$$cid" },
+                  {
+                    $cond: [
+                      { $ne: ["$$c", null] },
+                      { $toString: "$$c" },
+                      null
+                    ]
+                  }
+                ]
+              }
+            }
           }
         }
       },
 
-      // join client
+      // Robust client lookup:
+      // - matches when clients._id string equals the project clientKey
+      // - OR when clients.id equals the project clientKey (legacy)
       {
         $lookup: {
           from: "clients",
-          localField: "clientId",           // you create with clientId: ObjectId
-          foreignField: "_id",
+          let: { ck: "$_clientKeyStr" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $ne: ["$$ck", null] },
+                    {
+                      $or: [
+                        { $eq: [{ $toString: "$_id" }, "$$ck"] },
+                        { $eq: ["$id", "$$ck"] }
+                      ]
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              $project: {
+                _id: 1,
+                companyName: 1,
+                clientName: 1,
+                email: 1,
+                phone: 1,
+                address: 1,
+                id: 1
+              }
+            }
+          ],
           as: "clientDoc"
         }
       },
@@ -80,7 +158,7 @@ export async function GET(req) {
       {
         $lookup: {
           from: "users",
-          localField: "assignedUserIds",    // you create with assignedUserIds: [ObjectId]
+          localField: "assignedUserIds",
           foreignField: "_id",
           as: "assignedUsers"
         }
@@ -114,23 +192,32 @@ export async function GET(req) {
                 person:  { $ifNull: ["$clientDoc.clientName",  ""] }
               },
               in: {
-                $cond: [{ $ne: ["$$company", ""] }, "$$company",
+                $cond: [
+                  { $ne: ["$$company", ""] }, "$$company",
                   { $cond: [{ $ne: ["$$person", ""] }, "$$person", "—"] }
                 ]
               }
             }
           },
+
+          // ClientId for UI/links/filters as string:
           clientId: {
-            $cond: [{ $ifNull: ["$clientDoc._id", false] }, { $toString: "$clientDoc._id" }, ""]
+            $cond: [
+              { $ifNull: ["$clientDoc._id", false] },
+              { $toString: "$clientDoc._id" },
+              { $ifNull: ["$_clientKeyStr", ""] }
+            ]
           },
-          clientName: {                     // back-compat for any old UI reading clientName
+
+          clientName: {
             $let: {
               vars: {
                 company: { $ifNull: ["$clientDoc.companyName", ""] },
                 person:  { $ifNull: ["$clientDoc.clientName",  ""] }
               },
               in: {
-                $cond: [{ $ne: ["$$company", ""] }, "$$company",
+                $cond: [
+                  { $ne: ["$$company", ""] }, "$$company",
                   { $cond: [{ $ne: ["$$person", ""] }, "$$person", "—"] }
                 ]
               }
@@ -146,9 +233,12 @@ export async function GET(req) {
                 name: {
                   $cond: [
                     { $ne: ["$$u.name", null] },
-                    { $cond: [{ $ne: ["$$u.name", "" ] }, "$$u.name",
-                      { $ifNull: ["$$u.fullName", { $ifNull: ["$$u.email", { $toString: "$$u._id" }] }] }
-                    ]},
+                    {
+                      $cond: [
+                        { $ne: ["$$u.name", "" ] }, "$$u.name",
+                        { $ifNull: ["$$u.fullName", { $ifNull: ["$$u.email", { $toString: "$$u._id" }] }] }
+                      ]
+                    },
                     { $ifNull: ["$$u.fullName", { $ifNull: ["$$u.email", { $toString: "$$u._id" }] }] }
                   ]
                 },
@@ -181,35 +271,31 @@ export async function GET(req) {
 
     const rows = await coll.aggregate(pipeline).toArray();
 
-    // Finish date formatting (ISO yyyy-mm-dd) to match your table
+    // normalization for UI
     for (const r of rows) {
       r.startDate = dateStr(r.startDate);
       r.dueDate   = dateStr(r.dueDate);
-      // make sure id exists for link
       if (!r.id) r.id = r._id?.toString?.() || "";
-      // numbers normalized
       r.totalAmount = Number(r.totalAmount || 0);
       r.totalCost   = Number(r.totalCost || 0);
       r.profit      = Number(r.profit || 0);
-      // remove undefined avatarUrl keys
       if (Array.isArray(r.assignedTo)) {
         r.assignedTo = r.assignedTo.map(u => {
-          if (!u.avatarUrl) { delete u.avatarUrl; }
+          if (!u.avatarUrl) delete u.avatarUrl;
           return u;
         });
       }
-      // if services not requested, omit it; otherwise keep as-is
       if (!includeServices) delete r.services;
     }
 
     if (debug) {
-      // quick sanity to verify joins happened
       const withClient = rows.filter(r => r.client && r.client !== "—").length;
       const withAssignees = rows.filter(r => Array.isArray(r.assignedTo) && r.assignedTo.length).length;
+      const forClient = clientIdParam ? rows.length : undefined;
       return new Response(
         JSON.stringify({
           total, page, perPage,
-          summary: { rows: rows.length, withClient, withAssignees },
+          summary: { rows: rows.length, withClient, withAssignees, filteredByClient: forClient },
           sample: rows[0] || null
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }

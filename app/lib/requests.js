@@ -1,5 +1,3 @@
-// app/lib/requests.js
-
 /* ----------------------------- small helpers ----------------------------- */
 function qs(obj = {}) {
   const sp = new URLSearchParams();
@@ -23,19 +21,12 @@ async function fetchJSON(url, init) {
 
 /* ----------------------------- invoices ----------------------------- */
 
-/**
- * List invoices (for /app/invoices/page.jsx)
- * returns: { total, page, perPage, rows: [...] }
- */
+/** List invoices */
 export async function listInvoices({ q = "", page = 1, perPage = 20 } = {}) {
   return fetchJSON(`/api/invoices${qs({ q, page, perPage })}`, { cache: "no-store" });
 }
 
-/**
- * Create invoice (used by InvoiceCreateModal)
- * body: { source: "project"|"client", sourceId, taxPct?, items? }
- * returns: { _id, invoiceId, clientName, total, status, createdAt, pdfUrl }
- */
+/** Create invoice */
 export async function createInvoice({ source, sourceId, taxPct = 0, items } = {}) {
   if (!source || !sourceId) {
     throw new Error("source and sourceId are required (client)");
@@ -45,40 +36,42 @@ export async function createInvoice({ source, sourceId, taxPct = 0, items } = {}
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source, sourceId, taxPct, items }),
   });
-  // API responds with { ok, invoice }
   return json.invoice;
 }
 
-/**
- * Delete invoice by DB _id (not invoiceId string)
- * returns: { ok: true, deletedCount }
- */
+/** Delete invoice by _id */
 export async function deleteInvoice(id) {
   if (!id) throw new Error("id is required to delete invoice");
   return fetchJSON(`/api/invoices/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
+/** --- NEW: Get single invoice (JSON) --- */
+export async function getInvoice(id) {
+  if (!id) throw new Error("id is required");
+  return fetchJSON(`/api/invoices/${encodeURIComponent(id)}`, { cache: "no-store" });
+}
+
+/** --- NEW: Update invoice (record payment) --- */
+export async function updateInvoice(id, payload) {
+  if (!id) throw new Error("id is required");
+  return fetchJSON(`/api/invoices/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
+  });
+}
+
 /* ----------------------------- modal lists ----------------------------- */
 
-/**
- * Lightweight projects list for the modal.
- * Expects your helper route at /api/projects?light=1
- * returns array of projects: [{ id/_id, name, clientName|client, totalAmount }]
- */
+/** Lightweight projects list for the modal. */
 export async function listProjectsLight() {
-  // If you’ve implemented /api/projects?light=1 (as in my previous message), this works:
   const json = await fetchJSON(`/api/projects${qs({ light: 1 })}`, { cache: "no-store" });
-  // normalize return to array
   if (Array.isArray(json?.rows)) return json.rows;
   if (Array.isArray(json)) return json;
   return [];
 }
 
-/**
- * Clients with project counts for the modal.
- * Expects helper route at /api/clients/with-project-counts
- * returns array: [{ _id|id, name, projectCount }]
- */
+/** Clients with project counts for the modal. */
 export async function listClientsWithProjectCounts() {
   const json = await fetchJSON(`/api/clients/with-project-counts`, { cache: "no-store" });
   if (Array.isArray(json?.rows)) return json.rows;

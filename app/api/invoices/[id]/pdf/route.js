@@ -10,6 +10,10 @@ export async function GET(_req, ctx) {
   try {
     const { id } = await ctx.params;
     const db = await getDb();
+    if (!ObjectId.isValid(id)) {
+      return NextResponse.json({ error: "Invalid invoice id" }, { status: 400 });
+    }
+
     const inv = await db.collection("invoices").findOne({ _id: new ObjectId(id) });
     if (!inv || !inv.pdf) return NextResponse.json({ error: "Not found" }, { status: 404 });
 

@@ -9,17 +9,19 @@ import {
   MdTask,
   MdPeople,
   MdReceiptLong,
-  MdAttachMoney, // ← icon for Expenses
+  MdAttachMoney, // Expenses
 } from "react-icons/md";
 import { FiUsers } from "react-icons/fi";
+import { RiContactsBookLine } from "react-icons/ri"; // ← icon for Leads
 
 const navItems = [
   { name: "Dashboard", href: "/", icon: MdDashboard },
   { name: "Projects", href: "/projects", icon: MdTask },
   { name: "Users", href: "/users", icon: FiUsers },
   { name: "Clients", href: "/clients", icon: MdPeople },
+  { name: "Leads", href: "/leads", icon: RiContactsBookLine }, // ← NEW
   { name: "Invoices", href: "/invoices", icon: MdReceiptLong },
-  { name: "Expenses", href: "/expenses", icon: MdAttachMoney }, // ← added
+  { name: "Expenses", href: "/expenses", icon: MdAttachMoney },
 ];
 
 const Sidebar = () => {
@@ -39,7 +41,9 @@ const Sidebar = () => {
     >
       {/* Header */}
       <div className="flex justify-between items-center p-4">
-        {!collapsed && <div className="text-gray-700 font-semibold text-lg">Navigation</div>}
+        {!collapsed && (
+          <div className="text-gray-700 font-semibold text-lg">Navigation</div>
+        )}
         <button
           onClick={() => setCollapsed(!collapsed)}
           className="p-1 hover:bg-gray-100 rounded-md transition-transform duration-300"

@@ -11,17 +11,17 @@ export async function GET() {
   try {
     const db = await getDb();
 
-    // 1) Build a normalized key for projects -> client
+    // Build a normalized key for each project's client
     const counts = await db.collection("projects").aggregate([
       {
         $project: {
           clientKey: {
             $cond: [
-              { $ifNull: ["$clientId", false] },
+              { $ne: ["$clientId", null] }, // safer boolean
               { $toString: "$clientId" },
               {
                 $cond: [
-                  { $ifNull: ["$client", false] },
+                  { $ne: ["$client", null] },
                   { $toString: "$client" },
                   null
                 ]
@@ -35,44 +35,46 @@ export async function GET() {
       { $sort: { projectCount: -1 } }
     ]).toArray();
 
-    if (!counts.length) return NextResponse.json({ rows: [] });
+    if (!counts.length) {
+      return NextResponse.json({ rows: [] });
+    }
 
-    // 2) Load clients by _id (and by custom `id` if present)
+    // Resolve client docs by _id or custom id
     const keys = counts.map(c => c._id);
-    const byObjectIds = keys.filter(ObjectId.isValid).map(k => new ObjectId(k));
+    const objectIds = keys.filter((k) => ObjectId.isValid(k)).map((k) => new ObjectId(k));
 
     const clients = await db.collection("clients").find({
       $or: [
-        { _id: { $in: byObjectIds } },
-        { id: { $in: keys } } // only if some data used a custom `id` in the past
+        ...(objectIds.length ? [{ _id: { $in: objectIds } }] : []),
+        { id: { $in: keys } },
       ]
     }).project({
       companyName: 1,
       clientName: 1,
+      name: 1,
       email: 1,
       phone: 1,
       address: 1,
       id: 1
     }).toArray();
 
-    const rows = counts.map(c => {
+    const rows = counts.map((c) => {
       const key = c._id;
       const client =
-        clients.find(cl => String(cl._id) === key) ||
-        clients.find(cl => String(cl.id) === key) ||
-        null;
+        clients.find((cl) => String(cl._id) === key) ||
+        clients.find((cl) => String(cl.id) === key) || null;
 
       const displayName = client
-        ? (client.companyName || client.clientName || client.email || "Client")
+        ? (client.companyName || client.clientName || client.name || client.email || "Client")
         : "Client";
 
       return {
-        _id: client?._id || null,                 // always prefer ObjectId
+        _id: client?._id || null,
         id: client?.id || (client?._id ? String(client._id) : key),
         name: displayName,
         phone: client?.phone || "",
         address: client?.address || "",
-        projectCount: c.projectCount || 0
+        projectCount: c.projectCount || 0,
       };
     });
 

@@ -182,9 +182,9 @@ export default function InvoicesPage() {
                   filtered.map((row) => (
                     <tr key={row._id} className="hover:bg-gray-50 transition-colors">
                       <Td>
+                        {/* Updated link: go to dynamic invoice detail */}
                         <Link
-                          href={`/api/invoices/${row._id}/pdf`}
-                          target="_blank"
+                          href={`/invoices/${row._id}`}
                           className="text-green-700 hover:underline font-medium break-all"
                         >
                           {row.invoiceId}
