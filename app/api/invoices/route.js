@@ -1,60 +1,37 @@
-// app/api/invoices/route.js  (or your current path)
+// app/api/invoices/route.js
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import { renderInvoiceHTML, formatMoney } from "./_template";
+import { htmlToPdfBuffer } from "@/lib/puppeteer";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-/* ---------- Puppeteer launcher (Vercel + Local) ---------- */
-async function launchBrowser() {
-  if (process.env.VERCEL) {
-    const chromium = (await import("@sparticuz/chromium")).default;
-    const puppeteer = await import("puppeteer-core");
-    return puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: true,
-    });
-  }
-  const puppeteer = await import("puppeteer");
-  return puppeteer.launch({
-    headless: "new",
-    args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
-}
-
 /* ---------- helpers ---------- */
 function getCurrencySymbol() {
   return process.env.CURRENCY_SYMBOL || "৳";
 }
-
 async function getOrigin() {
   const h = await headers();
   const proto = h.get("x-forwarded-proto") || (process.env.VERCEL ? "https" : "http");
   const host = h.get("x-forwarded-host") || h.get("host") || process.env.VERCEL_URL || "localhost:3000";
   return `${proto}://${host}`;
 }
-
 function nextInvoiceId(n = 6) {
   const abc = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let s = "";
   for (let i = 0; i < n; i++) s += abc[Math.floor(Math.random() * abc.length)];
   return `INV-${new Date().getFullYear()}-${s}`;
 }
-
 function clientDisplayName(c) {
   return (c?.companyName || c?.clientName || c?.name || c?.email || "Client").trim();
 }
-
 function round2(n) {
   return Math.round(Number(n || 0) * 100) / 100;
 }
-
 function calcProjectTotal(p = {}) {
   if (p.totalAmount != null && !Number.isNaN(Number(p.totalAmount))) {
     return round2(p.totalAmount);
@@ -80,21 +57,17 @@ async function ensureInvoiceIndexes(db) {
         key: { source: 1, sourceId: 1 },
         name: "uniq_project_invoice",
         unique: true,
-        background: true,
         partialFilterExpression: { source: "project", sourceId: { $exists: true } },
       },
       {
         key: { source: 1, clientId: 1 },
         name: "uniq_client_invoice",
         unique: true,
-        background: true,
         partialFilterExpression: { source: "client", clientId: { $exists: true } },
       },
     ]);
-  } catch (err) {
-    if (!/E11000|already exists/i.test(String(err?.message || ""))) {
-      console.warn("ensureInvoiceIndexes warning:", err?.message || err);
-    }
+  } catch {
+    // ignore index races
   }
 }
 
@@ -161,19 +134,10 @@ async function createProjectInvoiceFromProject({ db, project, clientDoc, currenc
     status: "Created",
     notes: `Auto-generated from project: ${project.name || project.id}`,
     paidStampUrl,
-    clientProjects: [], // not used for project invoices
+    clientProjects: [],
   });
 
-  const browser = await launchBrowser();
-  const page = await browser.newPage();
-  await page.setContent(html, { waitUntil: "networkidle0" });
-  const pdfBuffer = await page.pdf({
-    format: "A4",
-    printBackground: true,
-    margin: { top: "14mm", bottom: "16mm", left: "12mm", right: "12mm" },
-  });
-  await page.close();
-  await browser.close();
+  const pdfBuffer = await htmlToPdfBuffer(html);
 
   const doc = {
     invoiceId,
@@ -250,17 +214,16 @@ export async function GET(req) {
   }
 }
 
-/* ---------- POST: create (project | client), reuse if exists ---------- */
+/* ---------- POST: create (project | client) with duplicate prevention ---------- */
 export async function POST(req) {
-  // Parse the body ONCE to avoid re-read issues on serverless
-  const parsedBody = await req.json().catch(() => ({}));
+  // Parse exactly once
+  const body = await req.json().catch(() => ({}));
 
   try {
     const db = await getDb();
     await ensureInvoiceIndexes(db);
 
-    const { source, sourceId, taxPct = 0 } = parsedBody;
-
+    const { source, sourceId, taxPct = 0 } = body;
     if (!source || !sourceId) {
       return NextResponse.json({ error: "source and sourceId are required" }, { status: 400 });
     }
@@ -270,15 +233,13 @@ export async function POST(req) {
     const paidStampUrl = `${origin}/paid-stamp.png`;
     const currency = getCurrencySymbol();
 
-    /* ---- PROJECT invoice (re-use if exists) ---- */
+    /* ---- PROJECT invoice ---- */
     if (source === "project") {
-      // normalize lookup key
       const pidQuery = ObjectId.isValid(sourceId) ? { _id: new ObjectId(sourceId) } : { id: sourceId };
-      const normalizedSourceId = ObjectId.isValid(sourceId) ? String(new ObjectId(sourceId)) : String(sourceId);
+      const pidStr = ObjectId.isValid(sourceId) ? String(new ObjectId(sourceId)) : String(sourceId);
 
-      const existing = await db
-        .collection("invoices")
-        .findOne({ source: "project", sourceId: normalizedSourceId });
+      // reuse if exists
+      const existing = await db.collection("invoices").findOne({ source: "project", sourceId: pidStr });
       if (existing) {
         return NextResponse.json({
           ok: true,
@@ -316,13 +277,13 @@ export async function POST(req) {
       });
     }
 
-    /* ---- CLIENT invoice (re-use if exists; aggregate child project invoices) ---- */
+    /* ---- CLIENT invoice ---- */
     if (source === "client") {
       const cq = ObjectId.isValid(sourceId) ? { _id: new ObjectId(sourceId) } : { id: sourceId };
       const clientDoc = await db.collection("clients").findOne(cq);
       if (!clientDoc) return NextResponse.json({ error: "Client not found" }, { status: 404 });
 
-      // Reuse client invoice if any
+      // reuse client invoice
       const existingClientInv = await db
         .collection("invoices")
         .findOne({ source: "client", clientId: clientDoc._id });
@@ -333,7 +294,7 @@ export async function POST(req) {
         });
       }
 
-      // Find all projects of this client (robust)
+      // projects of this client (robust)
       const key = String(clientDoc._id || clientDoc.id || "");
       const projFilter = {
         $or: [
@@ -346,7 +307,7 @@ export async function POST(req) {
       };
       const projects = await db.collection("projects").find(projFilter).toArray();
 
-      // Ensure/reuse each project invoice then aggregate
+      // ensure each project has an invoice; reuse/create
       const childInvoices = [];
       for (const p of projects) {
         const inv = await getOrCreateProjectInvoice({
@@ -361,7 +322,6 @@ export async function POST(req) {
       }
 
       const projectNameById = new Map(projects.map((p) => [String(p._id), p.name || "Unnamed Project"]));
-
       const clientProjects = childInvoices.map((ci) => {
         const total = round2(ci.total || 0);
         const paid = round2(ci.paidAmount || 0);
@@ -376,6 +336,7 @@ export async function POST(req) {
         };
       });
 
+      // per-project summary items
       const items = clientProjects.map((p) => ({
         orderId: p.projectId,
         description: p.name,
@@ -431,16 +392,7 @@ export async function POST(req) {
         clientProjects,
       });
 
-      const browser = await launchBrowser();
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: "networkidle0" });
-      const pdfBuffer = await page.pdf({
-        format: "A4",
-        printBackground: true,
-        margin: { top: "14mm", bottom: "16mm", left: "12mm", right: "12mm" },
-      });
-      await page.close();
-      await browser.close();
+      const pdfBuffer = await htmlToPdfBuffer(html);
 
       const doc = {
         invoiceId,
@@ -476,12 +428,12 @@ export async function POST(req) {
 
     return NextResponse.json({ error: "Invalid source" }, { status: 400 });
   } catch (e) {
-    // If unique index race triggers, return existing doc (no second req.json()!)
+    // Handle unique index races gracefully
     if (e?.code === 11000) {
       try {
         const db = await getDb();
-        const { source, sourceId } = parsedBody;
         const origin = await getOrigin();
+        const { source, sourceId } = body || {};
 
         if (source === "project") {
           const pid = ObjectId.isValid(sourceId) ? String(new ObjectId(sourceId)) : String(sourceId);
