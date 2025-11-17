@@ -5,7 +5,6 @@ import { useSession } from "next-auth/react";
 import axios from "axios";
 import toast from "react-hot-toast";
 
-// --- Icon Components ---
 const ArrowLeftIcon = (props) => (
   <svg {...props} xmlns="http://www.w3.org/2000/svg" width="24" height="24"
        viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
@@ -87,7 +86,6 @@ export default function AddUserPage() {
   return (
     <div className="bg-gray-50/50 min-h-screen font-sans text-gray-800">
       <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Header */}
         <div className="mb-8">
           <a href="/users"
              className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-indigo-600 transition-colors mb-4">
@@ -98,12 +96,10 @@ export default function AddUserPage() {
           <p className="mt-1 text-sm text-gray-600">Enter the details below to create a new user account.</p>
         </div>
 
-        {/* Form Card */}
         <div className="bg-white border border-gray-200 rounded-xl shadow-md">
           <form onSubmit={handleFormSubmit}>
             <div className="p-6 sm:p-8">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Name Field */}
                 <div className="md:col-span-2">
                   <label htmlFor="name"
                          className="block text-sm font-semibold text-gray-700 mb-2">Full Name</label>
@@ -117,7 +113,6 @@ export default function AddUserPage() {
                   />
                 </div>
 
-                {/* Email Field */}
                 <div className="md:col-span-2">
                   <label htmlFor="email"
                          className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
@@ -131,7 +126,6 @@ export default function AddUserPage() {
                   />
                 </div>
 
-                {/* Role Field */}
                 <div>
                   <label htmlFor="role" className="block text-sm font-semibold text-gray-700 mb-2">Role</label>
                   <select
@@ -148,7 +142,6 @@ export default function AddUserPage() {
                   </select>
                 </div>
 
-                {/* Designation Field */}
                 <div>
                   <label htmlFor="designation"
                          className="block text-sm font-semibold text-gray-700 mb-2">Designation</label>
@@ -162,7 +155,6 @@ export default function AddUserPage() {
                   />
                 </div>
 
-                {/* Conditional Monthly Salary Field */}
                 {role === 'in-house' && (
                   <div className="md:col-span-2 transition-all duration-300 ease-in-out">
                     <label htmlFor="monthly-salary"
@@ -185,7 +177,6 @@ export default function AddUserPage() {
                   </div>
                 )}
 
-                {/* Password Field */}
                 <div>
                   <label htmlFor="password"
                          className="block text-sm font-semibold text-gray-700 mb-2">Password</label>
@@ -206,7 +197,6 @@ export default function AddUserPage() {
                   </div>
                 </div>
 
-                {/* Confirm Password Field */}
                 <div>
                   <label htmlFor="confirm-password"
                          className="block text-sm font-semibold text-gray-700 mb-2">Confirm Password</label>
@@ -229,7 +219,6 @@ export default function AddUserPage() {
               </div>
             </div>
 
-            {/* Form Footer */}
             <div className="bg-gray-50 px-6 py-4 rounded-b-xl border-t border-gray-200 flex items-center justify-end gap-3">
               <a href="/users"
                  className="bg-white text-gray-700 border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-100 transition-colors focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">

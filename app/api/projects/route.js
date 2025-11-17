@@ -1,6 +1,7 @@
 // app/api/projects/list/route.js
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,6 +22,7 @@ function calcProjectTotal(p = {}) {
 
 export async function GET(req) {
   try {
+    await requireAdmin();
     const db = await getDb();
     const { searchParams } = new URL(req.url);
 
@@ -57,6 +59,7 @@ export async function GET(req) {
       rows: enriched,
     });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("projects/list GET error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

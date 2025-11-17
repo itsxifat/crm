@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,6 +35,7 @@ function normalizeServices(arr) {
 
 export async function POST(req) {
   try {
+    await requireAdmin();
     const body = await req.json();
     const {
       id,
@@ -89,6 +91,7 @@ export async function POST(req) {
     await db.collection("projects").updateOne(where, { $set });
     return NextResponse.json({ success: true });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("projects/update error:", e);
     return NextResponse.json({ error: "Failed to update project" }, { status: 500 });
   }

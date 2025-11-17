@@ -1,25 +1,23 @@
 // app/api/presence/heartbeat/route.js
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import clientPromise from "@/lib/mongodb";
-import { authOptions } from "@/lib/authOptions"; // <-- FIXED import
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
+import { authOptions } from "@/lib/authOptions"; // This is used by requireAdmin
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function POST() {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session?.user?.email) {
-      return NextResponse.json({ ok: false }, { status: 401 });
-    }
+    // Use requireAdmin which returns the user object on success
+    const user = await requireAdmin();
 
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB || "en_crm");
 
     // Mark the user online and bump lastSeen on heartbeat
     await db.collection("users").updateOne(
-      { email: session.user.email },
+      { email: user.email }, // Use email from validated user
       {
         $set: {
           isActive: true,
@@ -30,6 +28,7 @@ export async function POST() {
 
     return NextResponse.json({ ok: true });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("presence heartbeat error:", e);
     return NextResponse.json({ ok: false }, { status: 500 });
   }

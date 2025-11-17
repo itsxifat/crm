@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb"; // make sure this path matches your project
 import { ObjectId } from "mongodb";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ export const revalidate = 0;
 
 export async function GET(req) {
   try {
+    await requireAdmin();
     const { searchParams } = new URL(req.url);
     const q = (searchParams.get("q") || "").trim();
     const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10));
@@ -60,6 +62,7 @@ export async function GET(req) {
 
     return NextResponse.json({ total, page, perPage, rows });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("GET /api/expenses/list error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

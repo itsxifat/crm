@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import { formatEnvId, todayKey } from "@/lib/makeProjectId";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,6 +36,7 @@ function normalizeServices(arr) {
 
 export async function POST(req) {
   try {
+    await requireAdmin();
     const body = await req.json();
     const {
       name,
@@ -103,6 +105,7 @@ export async function POST(req) {
     db.collection("projects").createIndex({ id: 1 }, { unique: true }).catch(() => {});
     return NextResponse.json({ id: envId, _id: String(result.insertedId), success: true }, { status: 201 });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("projects/create error:", e);
     return NextResponse.json({ error: "Failed to create project" }, { status: 500 });
   }

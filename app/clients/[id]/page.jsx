@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Building2, Phone, Mail, Globe, MapPin } from "lucide-react";
 import EditClientButton from "./update.client";
 import KycSection from "./kyc.client";
+import { requireAdmin } from "@/lib/requireAdmin"; // <-- ADDED
 
 /** Always render the row and show "—" when empty. */
 function Labeled({ icon: Icon, label, value }) {
@@ -34,6 +35,7 @@ function SectionCard({ title, children, right }) {
 }
 
 export default async function ClientDetailsPage({ params }) {
+  await requireAdmin(); // <-- ADDED
   const { id } = await params; // Next 15
 
   // Server fetch core client info
@@ -61,7 +63,7 @@ export default async function ClientDetailsPage({ params }) {
             <ArrowLeft className="h-4 w-4" />
             Back to Clients
           </Link>
-          <EditClientButton id={id} />
+          <EditClientButton client={client} />
         </div>
 
         <section className="grid gap-8 lg:grid-cols-2">

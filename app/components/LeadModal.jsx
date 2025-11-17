@@ -1,4 +1,3 @@
-// components/LeadModal.jsx
 "use client";
 
 import { useState } from "react";

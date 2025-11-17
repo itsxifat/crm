@@ -5,6 +5,7 @@ import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import { renderInvoiceHTML, formatMoney } from "./_template";
 import { htmlToPdfBuffer } from "@/lib/puppeteer";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -81,7 +82,7 @@ async function createProjectInvoiceFromProject({ db, project, clientDoc, currenc
   const services = Array.isArray(project.services) ? project.services : [];
   const items = services.map((s, i) => {
     const qty = Number(s.unit || 0);
-    const unitPrice = Number(s.unitPrice || 0);
+    const unitPrice = Number(s.unitPrice) || 0;
     const total =
       s.offerPrice != null
         ? Number(s.offerPrice || 0)
@@ -180,6 +181,7 @@ async function getOrCreateProjectInvoice({ db, project, clientDoc, currency, log
 /* ---------- GET: list (no pdf payloads) ---------- */
 export async function GET(req) {
   try {
+    await requireAdmin();
     const db = await getDb();
     const { searchParams } = new URL(req.url);
     const q = (searchParams.get("q") || "").trim();
@@ -212,6 +214,7 @@ export async function GET(req) {
 
     return NextResponse.json({ total, page, perPage, rows: mapped });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("invoices GET error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
@@ -220,6 +223,7 @@ export async function GET(req) {
 /* ---------- POST: create (project | client) with real data & duplicate prevention ---------- */
 export async function POST(req) {
   try {
+    await requireAdmin();
     const db = await getDb();
     await ensureInvoiceIndexes(db);
 
@@ -426,6 +430,7 @@ export async function POST(req) {
 
     return NextResponse.json({ error: "Invalid source" }, { status: 400 });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     // unique-index race: return the existing doc
     if (e?.code === 11000) {
       try {

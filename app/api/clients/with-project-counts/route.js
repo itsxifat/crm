@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ export const revalidate = 0;
 
 export async function GET() {
   try {
+    await requireAdmin();
     const db = await getDb();
 
     // Build a normalized key for each project's client
@@ -80,6 +82,7 @@ export async function GET() {
 
     return NextResponse.json({ rows });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("clients with-project-counts GET error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

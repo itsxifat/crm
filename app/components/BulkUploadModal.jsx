@@ -1,4 +1,3 @@
-// components/BulkUploadModal.jsx
 "use client";
 
 import { useState } from "react";

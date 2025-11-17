@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,6 +10,7 @@ export const revalidate = 0;
 
 export async function GET(_req, ctx) {
   try {
+    await requireAdmin();
     const { id } = await ctx.params;
     const db = await getDb();
     if (!ObjectId.isValid(id)) {
@@ -29,6 +31,7 @@ export async function GET(_req, ctx) {
       },
     });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("invoice pdf GET error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

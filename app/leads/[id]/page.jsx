@@ -1,4 +1,3 @@
-// app/leads/[id]/page.jsx
 "use client";
 
 import { useEffect, useState } from "react";

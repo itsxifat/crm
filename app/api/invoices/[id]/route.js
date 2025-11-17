@@ -5,6 +5,7 @@ import { ObjectId } from "mongodb";
 import { renderInvoiceHTML } from "../_template";
 import { headers } from "next/headers";
 import { htmlToPdfBuffer } from "@/lib/puppeteer";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -111,6 +112,7 @@ async function buildClientProjects(db, clientId) {
 /* ---------------- GET: JSON invoice details (without pdf blob) ---------------- */
 export async function GET(_req, ctx) {
   try {
+    await requireAdmin();
     const { id } = await ctx.params;
     if (!ObjectId.isValid(id))
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
@@ -136,6 +138,7 @@ export async function GET(_req, ctx) {
       pdfUrl: `${origin}/api/invoices/${inv._id}/pdf`,
     });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("invoice GET error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
@@ -144,6 +147,7 @@ export async function GET(_req, ctx) {
 /* ---------------- PATCH: record payment, regenerate PDFs, and sync parent/children ---------------- */
 export async function PATCH(req, ctx) {
   try {
+    await requireAdmin();
     const { id } = await ctx.params;
     if (!ObjectId.isValid(id))
       return NextResponse.json({ error: "Invalid id" }, { status: 400 });
@@ -460,6 +464,7 @@ export async function PATCH(req, ctx) {
       balanceDue: refreshedCurrent.balanceDue,
     });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("invoice PATCH error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
@@ -468,6 +473,7 @@ export async function PATCH(req, ctx) {
 /* ---------------- DELETE ---------------- */
 export async function DELETE(_req, ctx) {
   try {
+    await requireAdmin();
     const { id } = await ctx.params;
     if (!ObjectId.isValid(id))
       return NextResponse.json({ error: "Invalid invoice id" }, { status: 400 });
@@ -478,6 +484,7 @@ export async function DELETE(_req, ctx) {
 
     return NextResponse.json({ ok: true, deletedCount: res.deletedCount });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("invoice DELETE error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

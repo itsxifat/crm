@@ -1,9 +1,3 @@
-// app/lib/projects-utils.js
-
-/* -------------------------------------------------------------------------- */
-/* Basics                                                                     */
-/* -------------------------------------------------------------------------- */
-
 export function currency(n = 0) {
   const x = Number(n || 0);
   return x.toLocaleString(undefined, {
@@ -18,7 +12,6 @@ export function normalizeId(v) {
   if (typeof v === "object") {
     if (v.id) return String(v.id);
     if (v._id) return String(v._id);
-    // Mongo style {_id: { $oid: "..." }}
     if (v.$oid) return String(v.$oid);
   }
   return String(v);
@@ -41,10 +34,6 @@ export function normalizeArrayWithId(arr) {
 export function isLikelyObjectId(v) {
   return /^[a-fA-F0-9]{24}$/.test(String(v || ""));
 }
-
-/* -------------------------------------------------------------------------- */
-/* UI helpers used by table/components                                        */
-/* -------------------------------------------------------------------------- */
 
 export const palette = {
   emerald: "text-emerald-700 bg-emerald-50 border-emerald-200",
@@ -70,10 +59,6 @@ export function initialsOf(name) {
   return parts.map((p) => p[0]?.toUpperCase() || "").join("");
 }
 
-/* -------------------------------------------------------------------------- */
-/* Services helpers                                                           */
-/* -------------------------------------------------------------------------- */
-
 export function emptyService() {
   return {
     description: "",
@@ -81,7 +66,7 @@ export function emptyService() {
     unit: "",
     totalPrice: 0,
     offerPrice: "",
-    cost: "",      // optional per-service cost support
+    cost: "",
     note: "",
   };
 }
@@ -100,7 +85,7 @@ function normalizeServices(arr) {
           : undefined;
       const note =
         typeof s.note === "string" && s.note.trim() ? s.note.trim() : undefined;
-      const cost = Number(s.cost) || 0; // per-service cost (optional)
+      const cost = Number(s.cost) || 0;
       return {
         description: s.description.trim(),
         unit,
@@ -113,14 +98,9 @@ function normalizeServices(arr) {
     });
 }
 
-/* -------------------------------------------------------------------------- */
-/* Network helpers (create/update + list)                                     */
-/* -------------------------------------------------------------------------- */
-
 export async function saveProject(payload, isEdit = false) {
   const cleaned = { ...payload, services: normalizeServices(payload.services || []) };
 
-  // totalCost fallback to sum of service.cost when not provided
   if (cleaned.totalCost == null || cleaned.totalCost === "") {
     const servicesCost = cleaned.services.reduce(
       (sum, s) => sum + (Number(s.cost) || 0),
@@ -158,16 +138,6 @@ const toArray = (json) => {
   return [];
 };
 
-/**
- * getProjects(options)
- * Fetch projects for pages/components.
- * options:
- *   q?: string
- *   page?: number
- *   perPage?: number
- *   light?: boolean   -> /api/projects?light=1
- *   includeServices?: boolean (ignored when light=true)
- */
 export async function getProjects(options = {}) {
   const {
     q = "",

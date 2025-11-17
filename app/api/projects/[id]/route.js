@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -118,6 +119,7 @@ async function enrichProject(db, projDoc) {
 /* -------------------------- GET: fetch project -------------------------- */
 export async function GET(_req, ctx) {
   try {
+    await requireAdmin();
     const { id } = await ctx.params;
     const db = await getDb();
 
@@ -132,6 +134,7 @@ export async function GET(_req, ctx) {
     const out = await enrichProject(db, proj);
     return NextResponse.json(out);
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("projects/[id] GET error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
@@ -142,6 +145,7 @@ const ALLOWED = ["Pending", "In-progress", "Completed", "On hold", "Canceled", "
 
 export async function PATCH(req, ctx) {
   try {
+    await requireAdmin();
     const { id } = await ctx.params;
     const body = await req.json().catch(() => ({}));
     const status = body?.status;
@@ -167,6 +171,7 @@ export async function PATCH(req, ctx) {
     const out = await enrichProject(db, proj);
     return NextResponse.json({ ok: true, project: out });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("projects/[id] PATCH error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
@@ -175,6 +180,7 @@ export async function PATCH(req, ctx) {
 /* -------------------------- DELETE: delete project -------------------------- */
 export async function DELETE(_req, ctx) {
   try {
+    await requireAdmin();
     const { id } = await ctx.params;
     const db = await getDb();
     const query = ObjectId.isValid(id) ? { _id: new ObjectId(id) } : { id };
@@ -185,6 +191,7 @@ export async function DELETE(_req, ctx) {
     }
     return NextResponse.json({ ok: true, deletedCount: result.deletedCount });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("projects/[id] DELETE error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

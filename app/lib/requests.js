@@ -1,4 +1,3 @@
-/* ----------------------------- small helpers ----------------------------- */
 function qs(obj = {}) {
   const sp = new URLSearchParams();
   Object.entries(obj).forEach(([k, v]) => {
@@ -12,21 +11,17 @@ function qs(obj = {}) {
 async function fetchJSON(url, init) {
   const res = await fetch(url, init);
   let json = null;
-  try { json = await res.json(); } catch { /* ignore */ }
+  try { json = await res.json(); } catch { }
   if (!res.ok) {
     throw new Error((json && json.error) || `HTTP ${res.status}`);
   }
   return json;
 }
 
-/* ----------------------------- invoices ----------------------------- */
-
-/** List invoices */
 export async function listInvoices({ q = "", page = 1, perPage = 20 } = {}) {
   return fetchJSON(`/api/invoices${qs({ q, page, perPage })}`, { cache: "no-store" });
 }
 
-/** Create invoice */
 export async function createInvoice({ source, sourceId, taxPct = 0, items } = {}) {
   if (!source || !sourceId) {
     throw new Error("source and sourceId are required (client)");
@@ -39,19 +34,16 @@ export async function createInvoice({ source, sourceId, taxPct = 0, items } = {}
   return json.invoice;
 }
 
-/** Delete invoice by _id */
 export async function deleteInvoice(id) {
   if (!id) throw new Error("id is required to delete invoice");
   return fetchJSON(`/api/invoices/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-/** --- NEW: Get single invoice (JSON) --- */
 export async function getInvoice(id) {
   if (!id) throw new Error("id is required");
   return fetchJSON(`/api/invoices/${encodeURIComponent(id)}`, { cache: "no-store" });
 }
 
-/** --- NEW: Update invoice (record payment) --- */
 export async function updateInvoice(id, payload) {
   if (!id) throw new Error("id is required");
   return fetchJSON(`/api/invoices/${encodeURIComponent(id)}`, {
@@ -61,9 +53,6 @@ export async function updateInvoice(id, payload) {
   });
 }
 
-/* ----------------------------- modal lists ----------------------------- */
-
-/** Lightweight projects list for the modal. */
 export async function listProjectsLight() {
   const json = await fetchJSON(`/api/projects${qs({ light: 1 })}`, { cache: "no-store" });
   if (Array.isArray(json?.rows)) return json.rows;
@@ -71,7 +60,6 @@ export async function listProjectsLight() {
   return [];
 }
 
-/** Clients with project counts for the modal. */
 export async function listClientsWithProjectCounts() {
   const json = await fetchJSON(`/api/clients/with-project-counts`, { cache: "no-store" });
   if (Array.isArray(json?.rows)) return json.rows;

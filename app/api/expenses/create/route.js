@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { connectMongoose } from "@/lib/mongoose";
 import Expense from "@/models/Expense";
 import mongoose from "mongoose";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,6 +71,7 @@ async function parseBody(req) {
 
 export async function POST(req) {
   try {
+    await requireAdmin();
     await connectMongoose();
     const body = await parseBody(req);
 
@@ -99,6 +101,7 @@ export async function POST(req) {
 
     return NextResponse.json({ success: true, _id: String(doc._id) }, { status: 201 });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("expenses/create error:", e);
     return NextResponse.json({ error: "Failed to create expense" }, { status: 500 });
   }

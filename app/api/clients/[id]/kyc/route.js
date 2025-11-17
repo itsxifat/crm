@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { connectMongoose } from "@/lib/mongoose";
 import mongoose from "mongoose";
 import Client from "@/models/Client";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -11,6 +12,7 @@ export async function GET(_req, { params }) {
   const { id } = await params; // Next 15
 
   try {
+    await requireAdmin();
     await connectMongoose();
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -51,6 +53,7 @@ export async function GET(_req, { params }) {
       tradeLicenseFile: build(doc.tradeLicenseFile, "tradeLicenseFile"),
     });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("KYC GET error", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

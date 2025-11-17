@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { connectMongoose } from "@/lib/mongoose";
 import Lead from "@/models/Lead";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,27 +23,34 @@ function parseCsv(text) {
 }
 
 export async function POST(req) {
-  await connectMongoose();
-  const form = await req.formData();
-  const file = form.get("file");
-  if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
+  try {
+    await requireAdmin();
+    await connectMongoose();
+    const form = await req.formData();
+    const file = form.get("file");
+    if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
 
-  const text = await file.text();
-  const raw = parseCsv(text);
+    const text = await file.text();
+    const raw = parseCsv(text);
 
-  const docs = raw
-    .map((r) => ({
-      name: r.name,
-      email: r.email || undefined,
-      phone: r.phone || undefined,
-      company: r.company || undefined,
-      status: r.status || undefined, // defaults to "New Lead"
-      priority: r.priority || undefined, // defaults handled by schema
-    }))
-    .filter((d) => d.name);
+    const docs = raw
+      .map((r) => ({
+        name: r.name,
+        email: r.email || undefined,
+        phone: r.phone || undefined,
+        company: r.company || undefined,
+        status: r.status || undefined, // defaults to "New Lead"
+        priority: r.priority || undefined, // defaults handled by schema
+      }))
+      .filter((d) => d.name);
 
-  if (docs.length === 0) return NextResponse.json({ inserted: 0 }, { status: 200 });
+    if (docs.length === 0) return NextResponse.json({ inserted: 0 }, { status: 200 });
 
-  const result = await Lead.insertMany(docs, { ordered: false });
-  return NextResponse.json({ inserted: result.length }, { status: 201 });
+    const result = await Lead.insertMany(docs, { ordered: false });
+    return NextResponse.json({ inserted: result.length }, { status: 201 });
+  } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
+    console.error("leads/upload POST error:", e);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
 }

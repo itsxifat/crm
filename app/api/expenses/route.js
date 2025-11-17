@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
+import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ const toOID = (v) => {
 
 export async function POST(req) {
   try {
+    await requireAdmin();
     const db = await getDb();
 
     // Accept multipart form-data
@@ -110,6 +112,7 @@ export async function POST(req) {
     const { insertedId } = await db.collection("expenses").insertOne(doc);
     return NextResponse.json({ success: true, id: String(insertedId), _id: String(insertedId) }, { status: 201 });
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("POST /api/expenses error:", e);
     return NextResponse.json({ error: "Failed to save expense" }, { status: 500 });
   }
@@ -118,6 +121,7 @@ export async function POST(req) {
 // Optional: simple GET fallback so your page can also call /api/expenses?q=...
 export async function GET(req) {
   try {
+    await requireAdmin();
     const { searchParams } = new URL(req.url);
     const q = (searchParams.get("q") || "").trim();
 
@@ -168,6 +172,7 @@ export async function GET(req) {
     // Return an array for the fallback; your page already copes with this
     return NextResponse.json(out);
   } catch (e) {
+    if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("GET /api/expenses error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
