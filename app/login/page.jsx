@@ -1,18 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { Lock, Mail, Loader2 } from "lucide-react";
 
-export default function LoginPage() {
+// 1. We move all the logic into this inner component
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/";
 
-  // Get session status
   const { data: session, status } = useSession();
 
   const [email, setEmail] = useState("");
@@ -20,7 +20,6 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // Redirect if already logged in
   useEffect(() => {
     if (status === "authenticated") {
       router.push(callbackUrl);
@@ -45,7 +44,6 @@ export default function LoginPage() {
         setError("Invalid email or password. Please try again.");
         setIsLoading(false);
       } else if (res.ok) {
-        // Successful login, redirect
         router.push(callbackUrl);
       }
     } catch (err) {
@@ -55,7 +53,6 @@ export default function LoginPage() {
     }
   };
 
-  // Show loading skeleton while session is being checked
   if (status === "loading") {
     return (
       <div className="w-full max-w-md p-10 text-center text-gray-500">
@@ -64,7 +61,6 @@ export default function LoginPage() {
     );
   }
 
-  // Render the login card (the layout provides the centering)
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95 }}
@@ -73,7 +69,6 @@ export default function LoginPage() {
       className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-sm"
     >
       <div className="flex flex-col items-center mb-8">
-        {/* Use your logo */}
         <Image 
           src="/logo.png" 
           alt="Enfinito CRM Logo" 
@@ -148,5 +143,14 @@ export default function LoginPage() {
         </a>
       </p>
     </motion.div>
+  );
+}
+
+// 2. The default export wraps the logic in Suspense
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="w-full max-w-md p-10 text-center text-gray-500">Loading...</div>}>
+      <LoginForm />
+    </Suspense>
   );
 }
