@@ -4,86 +4,23 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import LeadModal from "@/components/LeadModal";
 import BulkUploadModal from "@/components/BulkUploadModal";
-import { Plus, Upload, Search, Mail, Phone, Building, Edit, MoreVertical } from "lucide-react"; 
+import { Plus, Upload, Search, Filter, Edit, MoreHorizontal, Phone, Mail, Building } from "lucide-react";
 
-// --- StatusBadge Component (No changes) ---
+// --- Components ---
+
 function StatusBadge({ status }) {
   const map = {
-    "New Lead": "bg-blue-100 text-blue-800",
-    "Not Converted": "bg-gray-100 text-gray-800",
-    Converted: "bg-emerald-100 text-emerald-800",
+    "New Lead": "bg-blue-50 text-blue-700 ring-blue-600/20",
+    "Not Converted": "bg-gray-50 text-gray-600 ring-gray-500/10",
+    Converted: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
   };
+  const style = map[status] || map["Not Converted"];
   return (
-    <span className={`px-2.5 py-0.5 text-xs font-medium rounded-full ${map[status] || map["Not Converted"]}`}>
+    <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset ${style} whitespace-nowrap`}>
       {status}
     </span>
   );
 }
-
-// --- Table Header (No changes) ---
-function Th({ children, className = "" }) {
-  return (
-    <th className={`px-4 sm:px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider ${className}`}>
-      {children}
-    </th>
-  );
-}
-
-// --- Table Cell (No changes) ---
-function Td({ children, className = "" }) {
-  return <td className={`px-4 sm:px-6 py-4 text-sm text-gray-900 ${className}`}>{children}</td>;
-}
-
-// --- Lead Card Component for Mobile (No changes) ---
-function LeadCard({ lead, onEditClick }) {
-  return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-      {/* Card Header: Name, Status, and Actions */}
-      <div className="p-4 border-b border-gray-200 flex justify-between items-start gap-4">
-        <div>
-          <h3 className="font-semibold text-gray-900 break-words">{lead.name || "—"}</h3>
-          <div className="mt-1">
-            <StatusBadge status={lead.status} />
-          </div>
-        </div>
-        <div className="flex-shrink-0 flex items-center gap-2">
-          <Link href={`/leads/${encodeURIComponent(lead._id)}`} className="text-emerald-700 font-medium text-sm hover:underline">
-            Open
-          </Link>
-          <button
-            onClick={onEditClick}
-            className="text-gray-600 hover:underline text-sm"
-          >
-            Edit
-          </button>
-        </div>
-      </div>
-      
-      {/* Card Body: Contact Info */}
-      <div className="p-4 space-y-3">
-        {lead.email && (
-          <div className="flex items-center gap-3">
-            <Mail className="w-4 h-4 text-gray-500" />
-            <span className="text-sm text-gray-800 break-all">{lead.email}</span>
-          </div>
-        )}
-        {lead.phone && (
-          <div className="flex items-center gap-3">
-            <Phone className="w-4 h-4 text-gray-500" />
-            <span className="text-sm text-gray-800">{lead.phone}</span>
-          </div>
-        )}
-        {lead.company && (
-          <div className="flex items-center gap-3">
-            <Building className="w-4 h-4 text-gray-500" />
-            <span className="text-sm text-gray-800">{lead.company}</span>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 
 export default function LeadsPage() {
   const [data, setData] = useState([]);
@@ -108,147 +45,188 @@ export default function LeadsPage() {
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(() => data, [data]);
 
   return (
-    <div>
-      {/* --- Page Header (No changes) --- */}
-      <div className="mb-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-gray-900">Leads</h1>
-          <p className="mt-1 text-sm text-gray-600">Manage and track prospects with speed.</p>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <button
-            onClick={() => setShowBulkModal(true)}
-            className="flex items-center gap-2 bg-white border border-gray-300 text-gray-800 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-100 shadow-sm"
-          >
-            <Upload size={16} />
-            Bulk Upload
-          </button>
-          <button
-            onClick={() => {
-              setEditing(null);
-              setShowModal(true);
-            }}
-            className="flex items-center gap-2 bg-emerald-600 text-white rounded-lg px-4 py-2 text-sm font-semibold hover:bg-emerald-700 shadow-sm"
-          >
-            <Plus size={16} />
-            Add Lead
-          </button>
-        </div>
-      </div>
+    <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-white">
+      
+      {/* --- Header Area --- */}
+      <div className="flex-none px-4 py-4 border-b border-gray-200 bg-white">
+        <div className="flex flex-col gap-4">
+          {/* Title & Actions Row */}
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Leads</h1>
+              <p className="text-xs text-gray-500">Manage your prospects.</p>
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowBulkModal(true)}
+                className="p-2 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 sm:px-3 sm:py-2 sm:flex sm:items-center sm:gap-2"
+                title="Import"
+              >
+                <Upload className="h-4 w-4" />
+                <span className="hidden sm:inline text-xs font-medium">Import</span>
+              </button>
+              <button
+                onClick={() => { setEditing(null); setShowModal(true); }}
+                className="p-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 sm:px-3 sm:py-2 sm:flex sm:items-center sm:gap-2 shadow-sm"
+                title="Add Lead"
+              >
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline text-xs font-medium">Add Lead</span>
+              </button>
+            </div>
+          </div>
 
-      {/* --- Data Container (No changes) --- */}
-      <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
-        {/* Search Bar (No changes) */}
-        <div className="p-4 sm:p-6 border-b border-gray-200 flex flex-col sm:flex-row items-center gap-3">
-          <div className="relative w-full flex-1">
+          {/* Search Row */}
+          <div className="relative w-full">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+              <Search className="h-4 w-4 text-gray-400" />
+            </div>
             <input
+              type="text"
               value={q}
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && load()}
-              placeholder="Search by name, email, phone, company…"
-              className="block w-full pl-3 pr-10 py-2 border border-gray-300 rounded-lg bg-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 sm:text-sm"
+              placeholder="Search leads..."
+              className="block w-full rounded-lg border-0 py-2 pl-9 pr-3 text-gray-900 ring-1 ring-inset ring-gray-200 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-emerald-600 sm:text-sm sm:leading-6 bg-gray-50/50"
             />
-            <button
-              onClick={load}
-              className="absolute inset-y-0 right-0 flex items-center justify-center px-3 text-gray-500 hover:text-emerald-600"
-            >
-              <Search size={18} />
-            </button>
           </div>
         </div>
-
-        {/* --- Content Area (No changes) --- */}
-        {loading ? (
-          <div className="py-16 text-center text-gray-500">Loading…</div>
-        ) : filtered.length === 0 ? (
-          <div className="py-16 text-center text-gray-500">No leads found.</div>
-        ) : (
-          <>
-            {/* --- Mobile: Card List (No changes) --- */}
-            <div className="p-4 space-y-4 md:hidden">
-              {filtered.map((lead) => (
-                <LeadCard
-                  key={lead._id}
-                  lead={lead}
-                  onEditClick={() => {
-                    setEditing(lead);
-                    setShowModal(true);
-                  }}
-                />
-              ))}
-            </div>
-
-            {/* --- THIS IS THE FIX ---
-              The table is hidden below 'md' (768px).
-              Columns are progressively revealed at 'lg' (1024px), 'xl' (1280px), and '2xl' (1536px).
-            */}
-            <div className="overflow-x-auto hidden md:block">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <Th>Name</Th>
-                    <Th className="hidden lg:table-cell">Company</Th>
-                    <Th className="hidden xl:table-cell">Email</Th>
-                    <Th className="hidden 2xl:table-cell">Phone</Th>
-                    <Th>Status</Th>
-                    <Th className="text-right">Actions</Th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filtered.map((lead) => (
-                    <tr key={lead._id} className="hover:bg-gray-50">
-                      <Td>{lead.name || "—"}</Td>
-                      <Td className="hidden lg:table-cell">{lead.company || "—"}</Td>
-                      <Td className="hidden xl:table-cell">{lead.email || "—"}</Td>
-                      <Td className="hidden 2xl:table-cell">{lead.phone || "—"}</Td>
-                      <Td><StatusBadge status={lead.status} /></Td>
-                      <Td className="text-right space-x-3 whitespace-nowrap">
-                        <Link href={`/leads/${encodeURIComponent(lead._id)}`} className="text-emerald-700 hover:underline font-medium">
-                          Open
-                        </Link>
-                        <button
-                          onClick={() => {
-                            setEditing(lead);
-                            setShowModal(true);
-                          }}
-                          className="text-gray-600 hover:underline font-medium"
-                        >
-                          Edit
-                        </button>
-                      </Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
       </div>
 
-      {/* --- Modals (No changes) --- */}
+      {/* --- Responsive Table Container --- */}
+      {/* 'flex-1' fills remaining height. 'overflow-auto' handles scrolling. */}
+      <div className="flex-1 overflow-auto relative w-full">
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-30 backdrop-blur-sm">
+            <div className="flex items-center gap-2 text-emerald-600 font-medium text-sm animate-pulse">
+              <div className="h-2 w-2 rounded-full bg-emerald-600" /> Loading...
+            </div>
+          </div>
+        )}
+
+        <table className="min-w-full border-separate border-spacing-0 text-left w-full">
+          <thead className="bg-gray-50 sticky top-0 z-20 shadow-sm">
+            <tr>
+              {/* 1. Name (Primary) */}
+              <th scope="col" className="border-b border-gray-200 bg-gray-50 py-3 pl-4 pr-2 text-xs font-semibold text-gray-900 w-auto">
+                Name / Company
+              </th>
+              
+              {/* 2. Status (Visible on all) */}
+              <th scope="col" className="border-b border-gray-200 bg-gray-50 px-2 py-3 text-xs font-semibold text-gray-900 w-[100px] sm:w-auto">
+                Status
+              </th>
+
+              {/* 3. Contact (Hidden on Mobile) */}
+              <th scope="col" className="hidden sm:table-cell border-b border-gray-200 bg-gray-50 px-2 py-3 text-xs font-semibold text-gray-900">
+                Contact
+              </th>
+
+              {/* 4. Source (Hidden on Mobile/Tablet) */}
+              <th scope="col" className="hidden md:table-cell border-b border-gray-200 bg-gray-50 px-2 py-3 text-xs font-semibold text-gray-900">
+                Source
+              </th>
+              
+              {/* 5. Actions */}
+              <th scope="col" className="border-b border-gray-200 bg-gray-50 py-3 pl-2 pr-4 text-right text-xs font-semibold text-gray-900 w-[50px]">
+                <span className="sr-only">Edit</span>
+              </th>
+            </tr>
+          </thead>
+          
+          <tbody className="divide-y divide-gray-100 bg-white">
+            {filtered.length === 0 && !loading && (
+              <tr>
+                <td colSpan={5} className="py-12 text-center text-sm text-gray-500">
+                  No leads found.
+                </td>
+              </tr>
+            )}
+            
+            {filtered.map((lead) => (
+              <tr key={lead._id} className="hover:bg-gray-50 group">
+                
+                {/* Column 1: Name & Company (Stacked) */}
+                <td className="border-b border-gray-100 py-3 pl-4 pr-2 align-middle">
+                  <div className="flex flex-col max-w-[160px] sm:max-w-xs">
+                    <Link 
+                      href={`/leads/${encodeURIComponent(lead._id)}`} 
+                      className="text-sm font-medium text-gray-900 hover:text-emerald-600 truncate"
+                    >
+                      {lead.name}
+                    </Link>
+                    {lead.company ? (
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <Building className="h-3 w-3 text-gray-400 hidden sm:block" />
+                        <span className="text-xs text-gray-500 truncate">{lead.company}</span>
+                      </div>
+                    ) : (
+                      <span className="text-xs text-gray-300 italic mt-0.5">No Company</span>
+                    )}
+                  </div>
+                </td>
+
+                {/* Column 2: Status */}
+                <td className="border-b border-gray-100 px-2 py-3 align-middle">
+                  <StatusBadge status={lead.status} />
+                </td>
+
+                {/* Column 3: Contact (Hidden on Mobile) */}
+                <td className="hidden sm:table-cell border-b border-gray-100 px-2 py-3 align-middle">
+                  <div className="flex flex-col gap-1 text-xs text-gray-600">
+                    {lead.email && (
+                      <div className="flex items-center gap-1.5">
+                        <Mail className="h-3 w-3 text-gray-400" />
+                        <span className="truncate max-w-[150px]">{lead.email}</span>
+                      </div>
+                    )}
+                    {lead.phone && (
+                      <div className="flex items-center gap-1.5">
+                        <Phone className="h-3 w-3 text-gray-400" />
+                        <span>{lead.phone}</span>
+                      </div>
+                    )}
+                  </div>
+                </td>
+
+                {/* Column 4: Source (Hidden on Mobile/Tablet) */}
+                <td className="hidden md:table-cell border-b border-gray-100 px-2 py-3 align-middle text-xs text-gray-500">
+                  {lead.source || "—"}
+                </td>
+
+                {/* Column 5: Action */}
+                <td className="border-b border-gray-100 py-3 pl-2 pr-4 text-right align-middle">
+                  <button
+                    onClick={() => { setEditing(lead); setShowModal(true); }}
+                    className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                  >
+                    <Edit className="h-4 w-4" />
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modals */}
       {showModal && (
         <LeadModal
           lead={editing}
           onClose={() => setShowModal(false)}
-          onSaved={() => {
-            setShowModal(false);
-            load();
-          }}
+          onSaved={() => { setShowModal(false); load(); }}
         />
       )}
       {showBulkModal && (
         <BulkUploadModal
           onClose={() => setShowBulkModal(false)}
-          onUploaded={() => {
-            setShowBulkModal(false);
-            load();
-          }}
+          onUploaded={() => { setShowBulkModal(false); load(); }}
         />
       )}
     </div>

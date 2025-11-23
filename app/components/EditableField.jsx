@@ -11,125 +11,115 @@ export default function EditableField({
   type = "text", 
   options = [], 
   onSave, 
-  onAddNew 
+  onAddNew,
+  onDelete,
+  className = ""
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [tempValue, setTempValue] = useState(value || "");
   const [saving, setSaving] = useState(false);
 
-  // Format date for display vs input
   const displayValue = type === "date" && value 
-    ? new Date(value).toLocaleDateString() 
-    : value || "—";
+    ? new Date(value).toLocaleDateString("en-GB", { day: 'numeric', month: 'short', year: 'numeric' })
+    : value || <span className="text-gray-300 italic">Empty</span>;
     
   const inputValue = type === "date" && tempValue 
     ? new Date(tempValue).toISOString().split("T")[0] 
     : tempValue;
 
   const handleSave = async () => {
-    // Don't save if nothing changed
     if (tempValue === value) {
       setIsEditing(false);
       return;
     }
-
     setSaving(true);
     try {
       await onSave(tempValue);
       setIsEditing(false);
     } catch (error) {
-      console.error("Failed to save", error);
-      alert("Failed to save changes.");
+      alert("Failed to save.");
     } finally {
       setSaving(false);
     }
   };
 
-  const handleCancel = () => {
-    setTempValue(value || ""); // Reset
-    setIsEditing(false);
-  };
-
   return (
-    <div className="group flex flex-col p-4 bg-white border border-gray-100 rounded-xl shadow-sm hover:shadow-md transition-all duration-200">
-      {/* Label Row */}
-      <div className="flex items-center gap-2 mb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-        {Icon && <Icon className="h-3.5 w-3.5" />}
-        {label}
-      </div>
+    <div className={`py-3 border-b border-gray-100 last:border-0 ${className}`}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            {Icon && <Icon className="h-3.5 w-3.5 text-gray-400" />}
+            <span className="text-xs font-bold text-gray-500 uppercase tracking-wide">
+              {label}
+            </span>
+          </div>
 
-      {/* Content Row */}
-      <div className="min-h-[28px] flex items-center">
-        {!isEditing ? (
-          // --- READ MODE ---
-          <div className="flex-1 flex justify-between items-center gap-2">
-            <div className={`text-sm font-medium text-gray-900 break-words w-full ${!value && "text-gray-400 italic"}`}>
+          {!isEditing ? (
+            <div className="text-sm font-medium text-gray-900 break-words pl-5.5">
               {displayValue}
             </div>
-            {/* Edit Icon: Visible on hover (desktop) or always (mobile) */}
+          ) : (
+            <div className="mt-1 pl-5.5 animate-in fade-in duration-200">
+              <div className="flex gap-2">
+                <div className="flex-1">
+                  {type === "select" || type === "service" || type === "category" ? (
+                    <SearchableSelect 
+                      value={tempValue}
+                      onChange={setTempValue}
+                      options={options}
+                      onAddNew={onAddNew}
+                      onDelete={onDelete}
+                      placeholder={`Select ${label}...`}
+                    />
+                  ) : type === "textarea" ? (
+                    <textarea
+                      className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-emerald-500 outline-none transition-shadow"
+                      rows={3}
+                      autoFocus
+                      value={tempValue}
+                      onChange={(e) => setTempValue(e.target.value)}
+                    />
+                  ) : (
+                    <input
+                      type={type}
+                      className="w-full p-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-emerald-500 outline-none transition-shadow"
+                      autoFocus
+                      value={inputValue}
+                      onChange={(e) => setTempValue(e.target.value)}
+                    />
+                  )}
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="p-1.5 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 shadow-sm transition-colors"
+                  >
+                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  </button>
+                  <button
+                    onClick={() => { setIsEditing(false); setTempValue(value || ""); }}
+                    className="p-1.5 bg-white border border-gray-200 text-gray-600 rounded-md hover:bg-gray-100 transition-colors"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex-shrink-0 pt-1">
+          {!isEditing && (
             <button 
-              onClick={() => {
-                setTempValue(value || ""); // Init temp value
-                setIsEditing(true);
-              }}
-              className="opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-all"
-              title={`Edit ${label}`}
+              onClick={() => { setTempValue(value || ""); setIsEditing(true); }}
+              className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+              title="Edit"
             >
               <Edit2 className="h-4 w-4" />
             </button>
-          </div>
-        ) : (
-          // --- EDIT MODE ---
-          <div className="flex-1 w-full flex items-start gap-2">
-            <div className="flex-1">
-              {type === "select" || type === "service" || type === "category" ? (
-                <div className="w-full">
-                  <SearchableSelect 
-                    value={tempValue}
-                    onChange={setTempValue}
-                    options={options}
-                    onAddNew={onAddNew}
-                    placeholder={`Select ${label}...`}
-                  />
-                </div>
-              ) : type === "textarea" ? (
-                <textarea
-                  className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                  rows={3}
-                  value={tempValue}
-                  onChange={(e) => setTempValue(e.target.value)}
-                />
-              ) : (
-                <input
-                  type={type}
-                  className="w-full p-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                  value={inputValue}
-                  onChange={(e) => setTempValue(e.target.value)}
-                />
-              )}
-            </div>
-            
-            {/* Action Buttons */}
-            <div className="flex flex-col gap-1">
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="p-1.5 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors disabled:opacity-50"
-                title="Save"
-              >
-                {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-              </button>
-              <button
-                onClick={handleCancel}
-                disabled={saving}
-                className="p-1.5 bg-gray-100 text-gray-600 rounded-md hover:bg-gray-200 transition-colors"
-                title="Cancel"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

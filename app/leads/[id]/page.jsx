@@ -1,76 +1,87 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, User, Building2, Phone, Mail, MapPin, Link as LinkIcon, Calendar, Tag, FileText, Send, MessageSquare, Briefcase, Layers, Globe } from "lucide-react";
+import { 
+  ArrowLeft, User, Building2, Phone, Mail, MapPin, Link as LinkIcon, 
+  Calendar, Tag, FileText, Send, MessageSquare, Briefcase, Layers, Globe, 
+  Clock, ChevronRight, Loader2, Hash, Activity, Info, ChevronDown
+} from "lucide-react";
 import EditableField from "@/components/EditableField";
+
+// Helper: Avatar for timeline
+function Avatar({ name }) {
+  const initials = name ? name.substring(0, 2).toUpperCase() : "U";
+  return (
+    <div className="h-8 w-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold border-2 border-white shadow-sm shrink-0">
+      {initials}
+    </div>
+  );
+}
 
 export default function LeadDetailsPage() {
   const { id } = useParams();
-  const router = useRouter();
   const [lead, setLead] = useState(null);
   const [loading, setLoading] = useState(true);
   
-  // Attributes for Dropdowns
+  // Metadata
   const [services, setServices] = useState([]);
   const [categories, setCategories] = useState([]);
 
-  // Comment State
+  // Comments
   const [newComment, setNewComment] = useState("");
   const [submittingComment, setSubmittingComment] = useState(false);
+  const commentsEndRef = useRef(null);
+  
+  // Mobile Tab State
+  const [activeTab, setActiveTab] = useState("details");
 
-  // --- 1. Fetch Data (Lead + Attributes) ---
+  // --- Fetch Data ---
   useEffect(() => {
     if (!id) return;
-
     const fetchData = async () => {
       try {
         const [leadRes, attrRes] = await Promise.all([
           fetch(`/api/leads/${id}`, { cache: "no-store" }),
           fetch("/api/leads/attributes")
         ]);
-
         if (!leadRes.ok) throw new Error("Lead not found");
         
-        const leadData = await leadRes.json();
+        setLead(await leadRes.json());
         const attrData = await attrRes.json();
-
-        setLead(leadData);
         if (attrData.services) setServices(attrData.services);
         if (attrData.categories) setCategories(attrData.categories);
       } catch (e) {
         console.error(e);
-        if (!lead) setLead(null); // Only clear if initial load
       } finally {
         setLoading(false);
       }
     };
-
     fetchData();
   }, [id]);
 
-  // --- 2. Handle Inline Save ---
+  useEffect(() => {
+    // Scroll to bottom when comments change or tab switches
+    if (activeTab === "activity") {
+      commentsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [lead?.comments, activeTab]);
+
+  // --- Actions ---
   const handleFieldSave = async (field, value) => {
     try {
-      // Optimistic update
-      setLead((prev) => ({ ...prev, [field]: value }));
-
-      const res = await fetch(`/api/leads/${id}`, {
+      setLead((prev) => ({ ...prev, [field]: value })); // Optimistic UI
+      await fetch(`/api/leads/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ [field]: value }),
       });
-
-      if (!res.ok) throw new Error("Failed to update");
     } catch (error) {
-      console.error("Update failed", error);
-      // Revert logic could go here, usually a toast is enough
-      alert("Failed to update field");
+      alert("Failed to update.");
     }
   };
 
-  // --- 3. Handle New Attribute Creation (Inline) ---
   const handleAddNewAttribute = async (type, name) => {
     try {
       await fetch("/api/leads/attributes", {
@@ -78,15 +89,19 @@ export default function LeadDetailsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, name }),
       });
-      // Update local lists
       if (type === 'service') setServices(prev => [...prev, name].sort());
       if (type === 'category') setCategories(prev => [...prev, name].sort());
-    } catch (e) {
-      console.error("Failed to create attribute", e);
-    }
+    } catch (e) { console.error(e); }
   };
 
-  // --- 4. Handle Comments ---
+  const handleDeleteAttribute = async (type, name) => {
+    try {
+      await fetch(`/api/leads/attributes?type=${type}&name=${encodeURIComponent(name)}`, { method: "DELETE" });
+      if (type === 'service') setServices(prev => prev.filter(i => i !== name));
+      if (type === 'category') setCategories(prev => prev.filter(i => i !== name));
+    } catch (e) { console.error(e); }
+  };
+
   async function handleAddComment(e) {
     e.preventDefault();
     if (!newComment.trim()) return;
@@ -102,175 +117,239 @@ export default function LeadDetailsPage() {
         setLead(prev => ({ ...prev, comments: updatedComments }));
         setNewComment("");
       }
-    } catch (error) {
-      console.error("Failed to add comment");
     } finally {
       setSubmittingComment(false);
     }
   }
 
-  if (loading) return <div className="p-10 text-center text-gray-500">Loading details...</div>;
+  if (loading) return (
+    <div className="h-screen flex items-center justify-center bg-gray-50">
+      <Loader2 className="h-8 w-8 text-emerald-600 animate-spin" />
+    </div>
+  );
+  
   if (!lead) return <div className="p-10 text-center text-gray-500">Lead not found</div>;
 
-  const formatDate = (d) => d ? new Date(d).toLocaleDateString() : "—";
-
   return (
-    <div>
-      {/* Header */}
-      <div className="mb-8 flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold text-gray-900 break-words">{lead.name}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            {/* Editable Status Badge */}
-            <div className="relative group">
-              <select
-                value={lead.status}
-                onChange={(e) => handleFieldSave("status", e.target.value)}
-                className={`appearance-none pl-3 pr-8 py-1 rounded-full text-xs font-bold uppercase tracking-wide cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-emerald-500 transition-all
-                  ${lead.status === "New Lead" ? "bg-blue-100 text-blue-800" :
-                    lead.status === "Converted" ? "bg-emerald-100 text-emerald-800" :
-                    "bg-gray-100 text-gray-800"}`}
-              >
-                <option value="New Lead">New Lead</option>
-                <option value="Not Converted">Not Converted</option>
-                <option value="Converted">Converted</option>
-              </select>
-              {/* Custom arrow for select */}
-              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-600">
-                <svg className="fill-current h-3 w-3" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+    <div className="min-h-screen bg-gray-100/50 flex flex-col">
+      
+      {/* --- 1. Header (Relative, scrolls with page) --- */}
+      <header className="bg-white border-b border-gray-200 px-4 sm:px-8 py-4 shadow-sm z-10">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            
+            {/* Breadcrumbs & Title */}
+            <div className="flex items-center gap-3 min-w-0">
+              <Link href="/leads" className="p-2 -ml-2 rounded-full hover:bg-gray-100 text-gray-500 transition-colors shrink-0">
+                <ArrowLeft className="h-5 w-5" />
+              </Link>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-xs text-gray-500 mb-0.5">
+                  <span className="hidden sm:inline">Leads</span>
+                  <ChevronRight className="h-3 w-3 hidden sm:inline" />
+                  <span className="truncate font-medium text-gray-900">{lead.company || "Prospect"}</span>
+                </div>
+                <h1 className="text-lg sm:text-xl font-bold text-gray-900 leading-tight truncate">
+                  {lead.name}
+                </h1>
               </div>
             </div>
-            
-            {lead.date && <span className="text-sm text-gray-500">Added on {formatDate(lead.date)}</span>}
-          </div>
-        </div>
-        
-        <div className="flex gap-2 w-full sm:w-auto">
-          <Link href="/leads" className="flex-1 sm:flex-none justify-center inline-flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg bg-white text-gray-700 hover:bg-gray-50 text-sm font-medium shadow-sm transition-all">
-            <ArrowLeft className="h-4 w-4" /> Back
-          </Link>
-        </div>
-      </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        
-        {/* Left Columns (Details) */}
-        <div className="xl:col-span-2 space-y-6">
-          
-          {/* Contact Information */}
-          <section>
-            <h3 className="text-lg font-bold text-gray-900 mb-4 border-b pb-2">Contact Information</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <EditableField label="Email" value={lead.email} icon={Mail} onSave={(v) => handleFieldSave("email", v)} />
-              <EditableField label="Phone" value={lead.phone} icon={Phone} onSave={(v) => handleFieldSave("phone", v)} />
-              <EditableField label="Company" value={lead.company} icon={Building2} onSave={(v) => handleFieldSave("company", v)} />
-              <EditableField label="Location" value={lead.location} icon={MapPin} onSave={(v) => handleFieldSave("location", v)} />
-              <EditableField label="FB Page Link" value={lead.fbPageLink} icon={LinkIcon} onSave={(v) => handleFieldSave("fbPageLink", v)} />
-            </div>
-          </section>
-
-          {/* Lead Details */}
-          <section>
-            <h3 className="text-lg font-bold text-gray-900 mb-4 border-b pb-2">Lead Details</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <EditableField label="Source" value={lead.source} icon={Globe} onSave={(v) => handleFieldSave("source", v)} />
-              <EditableField label="Platform" value={lead.platform} icon={Tag} onSave={(v) => handleFieldSave("platform", v)} />
-              <EditableField label="Reference" value={lead.reference} icon={User} onSave={(v) => handleFieldSave("reference", v)} />
-              
-              {/* Dropdown Fields */}
-              <EditableField 
-                label="Category" 
-                value={lead.category} 
-                icon={Layers} 
-                type="category" 
-                options={categories}
-                onAddNew={(name) => handleAddNewAttribute('category', name)}
-                onSave={(v) => handleFieldSave("category", v)} 
-              />
-              <EditableField 
-                label="Sister Concern" 
-                value={lead.service} 
-                icon={Briefcase} 
-                type="service" 
-                options={services}
-                onAddNew={(name) => handleAddNewAttribute('service', name)}
-                onSave={(v) => handleFieldSave("service", v)} 
-              />
-            </div>
-          </section>
-
-          {/* Schedule */}
-          <section>
-            <h3 className="text-lg font-bold text-gray-900 mb-4 border-b pb-2">Schedule</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <EditableField label="Lead Date" value={lead.date} icon={Calendar} type="date" onSave={(v) => handleFieldSave("date", v)} />
-              <EditableField label="Sending Date" value={lead.sendingDate} icon={Calendar} type="date" onSave={(v) => handleFieldSave("sendingDate", v)} />
-              <EditableField label="Follow Up" value={lead.followupDate} icon={Calendar} type="date" onSave={(v) => handleFieldSave("followupDate", v)} />
-            </div>
-          </section>
-
-          {/* Notes */}
-          <section>
-            <h3 className="text-lg font-bold text-gray-900 mb-4 border-b pb-2">General Note</h3>
-            <EditableField 
-              label="Note" 
-              value={lead.note} 
-              icon={FileText} 
-              type="textarea" 
-              onSave={(v) => handleFieldSave("note", v)} 
-            />
-          </section>
-        </div>
-
-        {/* Right Column (Comments) - Sticky on Desktop */}
-        <div className="xl:col-span-1">
-          <div className="bg-gray-50 rounded-2xl p-6 border border-gray-200 h-full flex flex-col xl:sticky xl:top-6 max-h-[800px]">
-            <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <MessageSquare className="h-5 w-5 text-emerald-600" />
-              Comments
-            </h3>
-
-            <div className="flex-1 overflow-y-auto space-y-4 mb-4 pr-2">
-              {lead.comments?.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-gray-400 py-10">
-                  <MessageSquare className="h-8 w-8 mb-2 opacity-20" />
-                  <p className="text-sm">No comments yet.</p>
+            {/* Status Pill */}
+            <div className="shrink-0 flex items-center">
+              <div className="relative">
+                <select
+                  value={lead.status}
+                  onChange={(e) => handleFieldSave("status", e.target.value)}
+                  className={`appearance-none pl-4 pr-9 py-2 rounded-full text-xs font-bold uppercase tracking-wide cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-all border border-transparent shadow-sm
+                    ${lead.status === "New Lead" ? "bg-blue-50 text-blue-700 hover:bg-blue-100" :
+                      lead.status === "Converted" ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100" :
+                      "bg-gray-50 text-gray-700 hover:bg-gray-200"}`}
+                >
+                  <option value="New Lead">New Lead</option>
+                  <option value="Not Converted">Not Converted</option>
+                  <option value="Converted">Converted</option>
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-current opacity-60">
+                  <ChevronDown className="h-4 w-4" />
                 </div>
-              ) : (
-                lead.comments.map((c, i) => (
-                  <div key={i} className="bg-white p-3.5 rounded-xl shadow-sm border border-gray-100">
-                    <div className="flex justify-between items-center mb-1.5">
-                      <span className="font-bold text-gray-800 text-xs uppercase tracking-wide">{c.author}</span>
-                      <span className="text-[10px] text-gray-400">{new Date(c.createdAt).toLocaleString()}</span>
-                    </div>
-                    <p className="text-gray-700 text-sm whitespace-pre-wrap leading-relaxed">{c.text}</p>
-                  </div>
-                ))
-              )}
+              </div>
             </div>
+          </div>
 
-            <form onSubmit={handleAddComment} className="relative mt-auto">
-              <textarea
-                className="w-full p-3 pr-12 rounded-xl border border-gray-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none text-sm resize-none shadow-sm"
-                rows="3"
-                placeholder="Type a comment..."
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                disabled={submittingComment}
-              />
-              <button
-                type="submit"
-                disabled={!newComment.trim() || submittingComment}
-                className="absolute bottom-3 right-3 p-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
-              >
-                {submittingComment ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              </button>
-            </form>
+          {/* Mobile Tabs */}
+          <div className="flex lg:hidden mt-4 border-t border-gray-100 pt-2 -mb-4">
+            <button 
+              onClick={() => setActiveTab("details")}
+              className={`flex-1 pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "details" ? "border-emerald-500 text-emerald-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <Info className="h-4 w-4" /> Details
+              </div>
+            </button>
+            <button 
+              onClick={() => setActiveTab("activity")}
+              className={`flex-1 pb-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "activity" ? "border-emerald-500 text-emerald-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+            >
+              <div className="flex items-center justify-center gap-2">
+                <Activity className="h-4 w-4" /> Activity
+              </div>
+            </button>
           </div>
         </div>
+      </header>
 
-      </div>
+      {/* --- 2. Main Content --- */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          
+          {/* --- LEFT: Details Column --- */}
+          <div className={`lg:col-span-8 space-y-6 ${activeTab === "activity" ? "hidden lg:block" : "block"}`}>
+            
+            {/* Quick Notes */}
+            <div className="bg-amber-50 rounded-lg border border-amber-100 p-1">
+              <EditableField 
+                label="Quick Notes" 
+                value={lead.note} 
+                icon={FileText} 
+                type="textarea" 
+                onSave={(v) => handleFieldSave("note", v)}
+                className="border-none bg-transparent hover:bg-amber-100/50"
+              />
+            </div>
+
+            {/* Card: Contact */}
+            <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/30 flex items-center gap-2">
+                <User className="h-4 w-4 text-gray-400" />
+                <h3 className="font-semibold text-gray-900 text-sm">Contact Info</h3>
+              </div>
+              <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                <EditableField label="Email" value={lead.email} icon={Mail} onSave={(v) => handleFieldSave("email", v)} />
+                <EditableField label="Phone" value={lead.phone} icon={Phone} onSave={(v) => handleFieldSave("phone", v)} />
+                <EditableField label="Company" value={lead.company} icon={Building2} onSave={(v) => handleFieldSave("company", v)} />
+                <EditableField label="Location" value={lead.location} icon={MapPin} onSave={(v) => handleFieldSave("location", v)} />
+                <div className="md:col-span-2">
+                  <EditableField label="Social Link" value={lead.fbPageLink} icon={LinkIcon} onSave={(v) => handleFieldSave("fbPageLink", v)} />
+                </div>
+              </div>
+            </section>
+
+            {/* Card: Deal Info */}
+            <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/30 flex items-center gap-2">
+                <Briefcase className="h-4 w-4 text-gray-400" />
+                <h3 className="font-semibold text-gray-900 text-sm">Deal Details</h3>
+              </div>
+              <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2">
+                <EditableField 
+                  label="Sister Concern" value={lead.service} icon={Briefcase} type="service" 
+                  options={services} onAddNew={(n) => handleAddNewAttribute('service', n)} onDelete={(n) => handleDeleteAttribute('service', n)} onSave={(v) => handleFieldSave("service", v)} 
+                />
+                <EditableField 
+                  label="Category" value={lead.category} icon={Layers} type="category" 
+                  options={categories} onAddNew={(n) => handleAddNewAttribute('category', n)} onDelete={(n) => handleDeleteAttribute('category', n)} onSave={(v) => handleFieldSave("category", v)} 
+                />
+                <EditableField label="Source" value={lead.source} icon={Globe} onSave={(v) => handleFieldSave("source", v)} />
+                <EditableField label="Platform" value={lead.platform} icon={Tag} onSave={(v) => handleFieldSave("platform", v)} />
+                <EditableField label="Reference" value={lead.reference} icon={Hash} onSave={(v) => handleFieldSave("reference", v)} />
+              </div>
+            </section>
+
+            {/* Card: Dates */}
+            <section className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+              <div className="px-5 py-3 border-b border-gray-100 bg-gray-50/30 flex items-center gap-2">
+                <Clock className="h-4 w-4 text-gray-400" />
+                <h3 className="font-semibold text-gray-900 text-sm">Timeline</h3>
+              </div>
+              <div className="p-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <EditableField label="Lead Date" value={lead.date} icon={Calendar} type="date" onSave={(v) => handleFieldSave("date", v)} />
+                <EditableField label="Sent Date" value={lead.sendingDate} icon={Calendar} type="date" onSave={(v) => handleFieldSave("sendingDate", v)} />
+                <EditableField label="Follow Up" value={lead.followupDate} icon={Calendar} type="date" onSave={(v) => handleFieldSave("followupDate", v)} />
+              </div>
+            </section>
+          </div>
+
+          {/* --- RIGHT: Activity Column (4/12) --- */}
+          <div className={`lg:col-span-4 ${activeTab === "details" ? "hidden lg:block" : "block"}`}>
+            <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col h-[600px] lg:h-[calc(100vh-140px)] lg:sticky lg:top-24">
+              
+              <div className="px-4 py-3 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                <h3 className="font-semibold text-gray-900 text-sm flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-gray-400" /> Activity
+                </h3>
+                <span className="bg-gray-200 text-gray-600 text-xs font-bold px-2 py-0.5 rounded-full">
+                  {lead.comments?.length || 0}
+                </span>
+              </div>
+
+              {/* Timeline Feed */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-5 bg-gray-50/30">
+                {lead.comments?.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                    <MessageSquare className="h-8 w-8 mb-2 opacity-20" />
+                    <p className="text-xs">No updates yet.</p>
+                  </div>
+                ) : (
+                  lead.comments.map((c, i) => (
+                    <div key={i} className="flex gap-3 group">
+                      <div className="flex-shrink-0 mt-1">
+                        <Avatar name={c.author} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline justify-between mb-1 gap-2">
+                          <span className="text-xs font-bold text-gray-900 truncate">{c.author}</span>
+                          <span className="text-[10px] text-gray-400 shrink-0">
+                            {new Date(c.createdAt).toLocaleString(undefined, { 
+                              month: 'short', 
+                              day: 'numeric', 
+                              hour: 'numeric', 
+                              minute: '2-digit',
+                              hour12: true // 12-hour format
+                            })}
+                          </span>
+                        </div>
+                        <div className="bg-white p-3 rounded-lg rounded-tl-none border border-gray-200 text-sm text-gray-700 whitespace-pre-wrap shadow-sm">
+                          {c.text}
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+                <div ref={commentsEndRef} />
+              </div>
+
+              {/* Comment Box */}
+              <div className="p-3 bg-white border-t border-gray-200 rounded-b-xl">
+                <form onSubmit={handleAddComment} className="relative">
+                  <textarea
+                    className="w-full p-3 pr-10 bg-gray-50 border border-transparent rounded-lg text-sm focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none resize-none transition-all placeholder:text-gray-400"
+                    rows="1"
+                    placeholder="Write a note..."
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleAddComment(e);
+                      }
+                    }}
+                    disabled={submittingComment}
+                  />
+                  <button
+                    type="submit"
+                    disabled={!newComment.trim() || submittingComment}
+                    className="absolute bottom-2 right-2 p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-md disabled:opacity-50 disabled:hover:bg-transparent transition-colors"
+                  >
+                    {submittingComment ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </main>
     </div>
   );
 }
