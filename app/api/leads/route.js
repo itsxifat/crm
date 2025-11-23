@@ -1,4 +1,3 @@
-// app/api/leads/route.js
 import { NextResponse } from "next/server";
 import { connectMongoose } from "@/lib/mongoose";
 import Lead from "@/models/Lead";
@@ -23,6 +22,8 @@ export async function GET(req) {
             { email: { $regex: q, $options: "i" } },
             { phone: { $regex: q, $options: "i" } },
             { company: { $regex: q, $options: "i" } },
+            { category: { $regex: q, $options: "i" } },
+            { service: { $regex: q, $options: "i" } },
           ],
         }
       : {};
@@ -42,8 +43,14 @@ export async function POST(req) {
     await connectMongoose();
     const body = await req.json();
 
+    // Ensure dates are actual Date objects or null
+    if (body.date) body.date = new Date(body.date);
+    if (body.sendingDate) body.sendingDate = new Date(body.sendingDate);
+    if (body.followupDate) body.followupDate = new Date(body.followupDate);
+
     const lead = await Lead.create(body);
 
+    // Auto-convert logic (optional, based on your previous code)
     if (lead.status === "Converted") {
       await Client.findOneAndUpdate(
         { email: lead.email ?? undefined },

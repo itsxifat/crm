@@ -3,7 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { Search, ChevronDown, LogIn, UserPlus } from "lucide-react";
+import Image from "next/image";
+import { Search, ChevronDown, LogIn, UserPlus, Menu } from "lucide-react"; // <-- Import Menu icon
 import { motion, AnimatePresence } from "framer-motion";
 
 function getInitials(name, email) {
@@ -16,8 +17,9 @@ function getInitials(name, email) {
   return "?";
 }
 
-export const Navbar = () => {
-  const { data: session, status } = useSession(); // status: "loading" | "authenticated" | "unauthenticated"
+// 1. Receive 'onToggleSidebar' prop from layout
+export const Navbar = ({ onToggleSidebar }) => {
+  const { data: session, status } = useSession();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
   const router = useRouter();
@@ -48,61 +50,73 @@ export const Navbar = () => {
   }, [dropdownOpen]);
 
   return (
-    <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md shadow-sm">
-      <div className="container mx-auto flex justify-between items-center py-4 px-6 md:px-12">
-        {/* Logo only */}
-        <div
-          className="flex items-center cursor-pointer"
-          onClick={() => router.push("/")}
-          role="button"
-          aria-label="Go to home"
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src="/logo.png" alt="App Logo" className="h-10 w-auto" />
+    <nav className="sticky top-0 z-20 bg-white/80 backdrop-blur-md shadow-sm">
+      <div className="container mx-auto flex justify-between items-center py-4 px-4 sm:px-6">
+        
+        {/* 2. Hamburger Menu & Logo */}
+        <div className="flex items-center gap-2">
+          {/* Hamburger Menu (Mobile Only) */}
+          <button
+            onClick={onToggleSidebar} // <-- Triggers layout state
+            className="p-2 rounded-md text-gray-600 hover:bg-gray-100 md:hidden"
+            aria-label="Open navigation"
+          >
+            <Menu size={24} />
+          </button>
+          
+          {/* Logo (Desktop Only) */}
+          <div
+            className="hidden md:flex items-center cursor-pointer flex-shrink-0"
+            onClick={() => router.push("/")}
+            role="button"
+            aria-label="Go to home"
+          >
+            <Image src="/logo.png" alt="App Logo" width={120} height={40} priority />
+          </div>
         </div>
 
         {/* Search Box */}
-        <div className="relative flex-grow mx-8 max-w-lg">
+        <div className="relative flex-grow mx-4 max-w-lg">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
           <input
             type="search"
             placeholder="Search..."
-            className="w-full pl-12 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+            className="w-full pl-12 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
           />
         </div>
 
         {/* Profile/Login Buttons */}
-        <div className="relative flex items-center gap-4">
-          {/* Loading shimmer while session resolves */}
+        <div className="relative flex items-center gap-2 sm:gap-4">
+          {/* Loading shimmer */}
           {status === "loading" && (
-            <div className="h-10 w-28 md:w-40 rounded-full bg-gray-200/80 animate-pulse" />
+            <div className="h-10 w-24 rounded-full bg-gray-200/80 animate-pulse" />
           )}
 
-          {/* Signed out */}
+          {/* Signed out (This part was already responsive, no change) */}
           {status === "unauthenticated" && (
             <>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => router.push("/login")}
-                className="flex items-center gap-2 px-5 py-2 text-indigo-600 rounded-full font-medium hover:bg-indigo-50 transition"
+                className="flex items-center justify-center p-2.5 sm:px-4 sm:py-2 text-emerald-600 rounded-full font-medium hover:bg-emerald-50 transition sm:gap-2"
               >
                 <LogIn size={20} />
-                Log In
+                <span className="hidden sm:inline">Log In</span>
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={() => router.push("/signup")}
-                className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white rounded-full font-medium shadow-md hover:bg-indigo-700 transition"
+                className="flex items-center justify-center p-2.5 sm:px-4 sm:py-2 bg-emerald-600 text-white rounded-full font-medium shadow-md hover:bg-emerald-700 transition sm:gap-2"
               >
                 <UserPlus size={20} />
-                Sign Up
+                <span className="hidden sm:inline">Sign Up</span>
               </motion.button>
             </>
           )}
 
-          {/* Signed in */}
+          {/* Signed in (This part was already responsive, no change) */}
           {status === "authenticated" && (
             <div className="relative" ref={dropdownRef}>
               <button
@@ -112,10 +126,8 @@ export const Navbar = () => {
                 aria-expanded={dropdownOpen}
                 title={userName || userEmail || "Account"}
               >
-                {/* User Avatar */}
-                <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center text-white font-semibold text-lg ring-2 ring-offset-2 ring-indigo-500 overflow-hidden">
+                <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center text-white font-semibold text-lg ring-2 ring-offset-2 ring-emerald-500 overflow-hidden">
                   {userImage ? (
-                    // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={userImage}
                       alt={userName || "User"}
@@ -125,11 +137,9 @@ export const Navbar = () => {
                     initials
                   )}
                 </div>
-
                 <span className="font-medium hidden md:inline">
                   {nameFirst || "Account"}
                 </span>
-
                 <ChevronDown
                   size={16}
                   className={`text-gray-500 transition-transform duration-200 ${dropdownOpen ? "rotate-180" : ""}`}
@@ -149,7 +159,7 @@ export const Navbar = () => {
                     aria-label="Account Menu"
                   >
                     <div className="p-4 border-b border-gray-200">
-                      <p className="font-semibold text-gray-800">
+                      <p className="font-semibold text-gray-800 truncate">
                         {userName || "Signed in"}
                       </p>
                       {userEmail ? (

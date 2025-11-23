@@ -1,106 +1,152 @@
 "use client";
 
-import { signIn } from "next-auth/react";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { signIn, useSession } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
 import { motion } from "framer-motion";
-import { Lock, Mail } from "lucide-react";
+import { Lock, Mail, Loader2 } from "lucide-react";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl") || "/";
+
+  // Get session status
+  const { data: session, status } = useSession();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const router = useRouter();
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.push(callbackUrl);
+    }
+  }, [status, router, callbackUrl]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const res = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
+    if (isLoading) return;
 
-    if (res.error) setError("Invalid email or password.");
-    else router.push("/");
+    setIsLoading(true);
+    setError("");
+
+    try {
+      const res = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
+      });
+
+      if (res.error) {
+        setError("Invalid email or password. Please try again.");
+        setIsLoading(false);
+      } else if (res.ok) {
+        // Successful login, redirect
+        router.push(callbackUrl);
+      }
+    } catch (err) {
+      console.error(err);
+      setError("An unexpected error occurred.");
+      setIsLoading(false);
+    }
   };
 
+  // Show loading skeleton while session is being checked
+  if (status === "loading") {
+    return (
+      <div className="w-full max-w-md p-10 text-center text-gray-500">
+        Loading session...
+      </div>
+    );
+  }
+
+  // Render the login card (the layout provides the centering)
   return (
-    <div className="flex justify-center items-center h-screen bg-gradient-to-br from-indigo-50 via-gray-50 to-purple-50">
-      <motion.div
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5 }}
-        className="w-full max-w-md p-10 bg-white/70 backdrop-blur-lg rounded-3xl shadow-2xl border border-gray-100"
-      >
-        <div className="flex flex-col items-center mb-8">
-          <motion.div
-            initial={{ scale: 0.8 }}
-            animate={{ scale: 1 }}
-            transition={{ type: "spring", stiffness: 200, damping: 15 }}
-            className="p-3 bg-indigo-500 rounded-full text-white shadow-lg"
-          >
-            <Mail size={24} />
-          </motion.div>
-          <h2 className="text-3xl font-extrabold text-gray-900 mt-4">
-            Welcome Back!
-          </h2>
-          <p className="text-center text-gray-500 mt-2">
-            Sign in to continue to your account
-          </p>
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      transition={{ duration: 0.3 }}
+      className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-8 shadow-sm"
+    >
+      <div className="flex flex-col items-center mb-8">
+        {/* Use your logo */}
+        <Image 
+          src="/logo.png" 
+          alt="Enfinito CRM Logo" 
+          width={180} 
+          height={48} 
+          priority 
+        />
+        <h2 className="text-2xl font-semibold text-gray-900 mt-6">
+          Admin Login
+        </h2>
+        <p className="text-center text-gray-500 mt-2 text-sm">
+          Sign in to access your dashboard
+        </p>
+      </div>
+
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-red-50 text-red-700 px-4 py-3 rounded-lg mb-6 text-sm font-medium border border-red-200"
+        >
+          {error}
+        </motion.div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="relative">
+          <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+          <input
+            type="email"
+            placeholder="Email Address"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            disabled={isLoading}
+            className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all duration-300 placeholder-gray-400 text-gray-800"
+          />
         </div>
 
-        {error && (
-          <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="bg-red-50 text-red-600 px-4 py-3 rounded-lg mb-4 text-sm font-medium border border-red-200"
-          >
-            {error}
-          </motion.div>
-        )}
+        <div className="relative">
+          <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+            disabled={isLoading}
+            className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none transition-all duration-300 placeholder-gray-400 text-gray-800"
+          />
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="relative">
-            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-            <input
-              type="email"
-              placeholder="Email Address"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all duration-300 placeholder-gray-400 text-gray-800"
-            />
-          </div>
+        <motion.button
+          whileHover={{ scale: isLoading ? 1 : 1.02 }}
+          whileTap={{ scale: isLoading ? 1 : 0.98 }}
+          type="submit"
+          disabled={isLoading}
+          className="w-full bg-emerald-600 text-white py-3 rounded-xl font-semibold shadow-lg hover:bg-emerald-700 transition-colors duration-200 flex items-center justify-center disabled:bg-gray-400 disabled:cursor-not-allowed"
+        >
+          {isLoading ? (
+            <Loader2 className="h-5 w-5 animate-spin" />
+          ) : (
+            "Log In"
+          )}
+        </motion.button>
+      </form>
 
-          <div className="relative">
-            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all duration-300 placeholder-gray-400 text-gray-800"
-            />
-          </div>
-
-          <motion.button
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
-            type="submit"
-            className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold shadow-lg hover:bg-indigo-700 transition-colors duration-200"
-          >
-            Log In
-          </motion.button>
-        </form>
-
-        <p className="text-center text-sm text-gray-500 mt-8">
-          Don’t have an account?{" "}
-          <a href="/register" className="text-indigo-600 font-medium hover:underline">
-            Sign up
-          </a>
-        </p>
-      </motion.div>
-    </div>
+      <p className="text-center text-sm text-gray-500 mt-8">
+        Don’t have an account?{" "}
+        <a href="/signup" className="text-emerald-600 font-medium hover:underline">
+          Sign up
+        </a>
+      </p>
+    </motion.div>
   );
 }

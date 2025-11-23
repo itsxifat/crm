@@ -1,31 +1,39 @@
-// models/Lead.js
 import mongoose from "mongoose";
+
+const CommentSchema = new mongoose.Schema({
+  text: { type: String, required: true },
+  author: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now },
+}, { _id: true });
 
 const LeadSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, trim: true },
-    email: { type: String, trim: true, lowercase: true, match: [/^\S+@\S+\.\S+$/, "Invalid email format"] },
-    phone: { type: String, trim: true },
-    company: { type: String, trim: true },
-
-    priority: { type: String, enum: ["Normal", "Medium", "High"], default: "Normal" },
-    status: { type: String, enum: ["New Lead", "Not Converted", "Converted"], default: "New Lead" },
-
+    // Core fields
+    name: { type: String, required: true },
+    phone: { type: String },
+    email: { type: String },
+    company: { type: String },
+    status: { type: String, default: "New Lead" },
+    priority: { type: String, default: "Normal" },
+    
+    // Details
+    source: { type: String },
+    date: { type: Date },
+    sendingDate: { type: Date },
     note: { type: String },
     reference: { type: String },
     category: { type: String },
-    interestedService: { type: String },
+    // Removed 'interested' field
+    service: { type: String }, // Stores "Sister Concern"
     fbPageLink: { type: String },
-    through: { type: String },
-    followup: { type: String },
+    platform: { type: String },
+    followupDate: { type: Date },
     location: { type: String },
-    sendingDate: { type: Date },
+
+    // Comments
+    comments: { type: [CommentSchema], default: [] },
   },
   { timestamps: true }
 );
-
-LeadSchema.index({ createdAt: -1 });
-LeadSchema.index({ email: 1 }, { sparse: true });
-LeadSchema.index({ name: "text", email: "text", phone: "text", company: "text" });
 
 export default mongoose.models.Lead || mongoose.model("Lead", LeadSchema);

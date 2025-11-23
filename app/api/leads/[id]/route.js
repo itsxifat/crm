@@ -1,4 +1,3 @@
-// app/api/leads/[id]/route.js
 import { NextResponse } from "next/server";
 import { connectMongoose } from "@/lib/mongoose";
 import Lead from "@/models/Lead";
@@ -13,13 +12,12 @@ export async function GET(_, { params }) {
   try {
     await requireAdmin();
     await connectMongoose();
-    const { id } = await params; // Next 15 dynamic params are async
+    const { id } = await params;
     const lead = await Lead.findById(id).lean();
     if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
     return NextResponse.json(lead, { status: 200 });
   } catch (e) {
     if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
-    console.error("leads GET [id] error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
@@ -30,6 +28,11 @@ export async function PATCH(req, { params }) {
     await connectMongoose();
     const { id } = await params;
     const body = await req.json();
+
+    // Handle dates
+    if (body.date) body.date = new Date(body.date);
+    if (body.sendingDate) body.sendingDate = new Date(body.sendingDate);
+    if (body.followupDate) body.followupDate = new Date(body.followupDate);
 
     const lead = await Lead.findByIdAndUpdate(id, body, { new: true });
 
@@ -49,7 +52,6 @@ export async function PATCH(req, { params }) {
     return NextResponse.json(lead, { status: 200 });
   } catch (e) {
     if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
-    console.error("leads PATCH [id] error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
@@ -63,7 +65,6 @@ export async function DELETE(_, { params }) {
     return NextResponse.json({ success: true }, { status: 200 });
   } catch (e) {
     if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
-    console.error("leads DELETE [id] error:", e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }
