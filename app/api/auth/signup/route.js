@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import clientPromise from "@/lib/mongodb";
+import clientPromise from "@/lib/mongodb"; // We still need this for the adapter if used elsewhere, but here we can use getDb
+import { getDb } from "@/lib/mongodb"; // Import the helper to ensure consistent DB naming
 import bcrypt from "bcryptjs";
 
 export async function POST(req) {
   try {
-    const { name, email, password } = await req.json();
+    const { name, email, password, adminSecret } = await req.json();
 
     if (!name || !email || !password) {
       return NextResponse.json(
@@ -13,50 +14,88 @@ export async function POST(req) {
       );
     }
 
-    const client = await clientPromise;
-    const db = client.db("en_crm");
+    // Use getDb() to ensure we connect to the EXACT same database as the rest of the app
+    const db = await getDb();
     const users = db.collection("users");
 
-    // Check if the email already exists
+    // 1. Check if user already exists
     const existingUser = await users.findOne({ email });
 
-    if (existingUser) {
-      if (existingUser.role !== "admin") {
-        return NextResponse.json(
-          { message: "You must be an admin to use this feature" },
-          { status: 403 }
-        );
-      }
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-      // If it's admin and already has account
+    // ---------------------------------------------------------
+    // PRIORITY 1: ADMIN CLAIM (Overrides everything)
+    // ---------------------------------------------------------
+    // We check this FIRST. If you have the key, you can overwrite any existing state.
+    if (adminSecret && adminSecret === process.env.ADMIN_SECRET) {
+      if (existingUser) {
+        // Upgrade/Fix existing user to Admin
+        await users.updateOne(
+          { email },
+          { 
+            $set: { 
+              name, 
+              password: hashedPassword, 
+              role: "admin", 
+              isActive: true,
+              designation: "Administrator" 
+            } 
+          }
+        );
+      } else {
+        // Create new admin
+        await users.insertOne({
+          name,
+          email,
+          password: hashedPassword,
+          role: "admin",
+          isActive: true,
+          designation: "Administrator",
+          createdAt: new Date(),
+        });
+      }
+      
+      return NextResponse.json({ message: "Admin account claimed successfully!" });
+    }
+
+    // ---------------------------------------------------------
+    // PRIORITY 2: STANDARD SIGNUP CHECKS
+    // ---------------------------------------------------------
+    
+    // If we get here, no Admin Key was provided.
+    // So we must be careful not to overwrite existing accounts.
+
+    if (existingUser && existingUser.password) {
       return NextResponse.json(
-        { message: "Admin already has an account" },
+        { message: "Account already exists. Please login." },
         { status: 400 }
       );
     }
-
-    // If email not found in DB → block non-admins
-    // (meaning only pre-created admins can sign up)
-    const preApprovedAdmin = await users.findOne({ email, role: "admin" });
-    if (!preApprovedAdmin) {
+    
+    // If no secret key, user MUST exist in DB (pre-added by another admin) to sign up
+    if (!existingUser) {
       return NextResponse.json(
-        { message: "You must be an admin to use this feature" },
+        { message: "No invite found. Contact an administrator or use an Admin Key." },
         { status: 403 }
       );
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create account for admin
+    // Activate the invited user
     await users.updateOne(
       { email },
-      { $set: { name, password: hashedPassword } }
+      { 
+        $set: { 
+          name, 
+          password: hashedPassword,
+          isActive: true 
+        } 
+      }
     );
 
-    return NextResponse.json({ message: "Admin account created successfully" });
+    return NextResponse.json({ message: "Account created successfully" });
+
   } catch (err) {
-    console.error(err);
+    console.error("Signup Error:", err);
     return NextResponse.json(
       { message: "Internal server error" },
       { status: 500 }

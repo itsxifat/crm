@@ -4,19 +4,26 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { motion } from "framer-motion";
-import { User, Mail, Lock } from "lucide-react";
+import { User, Mail, Lock, ShieldAlert } from "lucide-react";
 
 export default function SignupPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [adminSecret, setAdminSecret] = useState(""); // State for secret key
+  const [showSecret, setShowSecret] = useState(false); // Toggle visibility of secret field
   const [error, setError] = useState("");
   const router = useRouter();
 
   const handleSignup = async (e) => {
     e.preventDefault();
     try {
-      await axios.post("/api/auth/signup", { name, email, password });
+      await axios.post("/api/auth/signup", { 
+        name, 
+        email, 
+        password,
+        adminSecret // Send the secret
+      });
       router.push("/login");
     } catch (err) {
       setError(err.response?.data?.message || "Signup failed");
@@ -44,7 +51,7 @@ export default function SignupPage() {
               Create an Account
           </h2>
           <p className="text-center text-gray-500 mt-2">
-            Get started by creating your account
+            Enter your details below
           </p>
         </div>
 
@@ -95,13 +102,42 @@ export default function SignupPage() {
             />
           </div>
 
+          {/* Admin Secret Toggle */}
+          <div className="text-right">
+            <button 
+              type="button" 
+              onClick={() => setShowSecret(!showSecret)}
+              className="text-xs text-indigo-500 hover:text-indigo-700 font-medium"
+            >
+              {showSecret ? "Hide Admin Option" : "I have an Admin Key"}
+            </button>
+          </div>
+
+          {/* Admin Secret Input */}
+          {showSecret && (
+            <motion.div 
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              className="relative"
+            >
+              <ShieldAlert className="absolute left-4 top-1/2 -translate-y-1/2 text-indigo-500" size={20} />
+              <input
+                type="text"
+                placeholder="Admin Secret Key"
+                value={adminSecret}
+                onChange={(e) => setAdminSecret(e.target.value)}
+                className="w-full pl-12 pr-4 py-3 bg-indigo-50 border border-indigo-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all duration-300 placeholder-indigo-300 text-indigo-900"
+              />
+            </motion.div>
+          )}
+
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             type="submit"
             className="w-full bg-indigo-600 text-white py-3 rounded-xl font-semibold shadow-lg hover:bg-indigo-700 transition-colors duration-200"
           >
-            Sign Up
+            {showSecret && adminSecret ? "Create Admin Account" : "Sign Up"}
           </motion.button>
         </form>
 

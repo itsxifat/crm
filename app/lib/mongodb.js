@@ -1,13 +1,15 @@
 import { MongoClient } from "mongodb";
 
 const uri = process.env.MONGODB_URI;
-const dbName = process.env.MONGODB_DB || "projectsdb";
+// Default to 'en_crm' if not set in .env
+const dbName = process.env.MONGODB_DB || "en_crm"; 
 
 if (!uri) throw new Error("Missing MONGODB_URI");
 
 const options = {
   serverSelectionTimeoutMS: 5000,
-  tls: true,
+  family: 4, // Force IPv4 (Fixes localhost issues on some systems)
+  // tls: true, // <--- IMPORTANT: This must be REMOVED or commented out for localhost
 };
 
 let client;
@@ -32,6 +34,7 @@ if (process.env.NODE_ENV === "development") {
 
 export default clientPromise;
 
+// Helper to ensure we always get the correct DB
 export async function getDb() {
   const cli = await clientPromise;
   return cli.db(dbName);

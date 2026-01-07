@@ -172,13 +172,13 @@ export default function LeadModal({ lead, onClose, onSaved }) {
   }
 
   return (
-    // Responsive Overlay: Uses 'items-end sm:items-center' to slide up on mobile or center on desktop
+    // Responsive Overlay
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center sm:p-4">
       
-      {/* Modal Container: Full width on mobile, max-w-4xl on desktop */}
+      {/* Modal Container */}
       <div className="relative w-full sm:max-w-4xl bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col max-h-[95vh] sm:max-h-[90vh]">
         
-        {/* Header (Sticky) */}
+        {/* Header */}
         <div className="flex justify-between items-center px-4 sm:px-6 py-4 border-b border-gray-100 flex-shrink-0 bg-white rounded-t-2xl">
           <h3 className="text-lg font-semibold text-gray-900">
             {lead ? "Edit Lead Details" : "Add New Lead"}
@@ -192,7 +192,7 @@ export default function LeadModal({ lead, onClose, onSaved }) {
           </button>
         </div>
 
-        {/* Content (Scrollable) */}
+        {/* Content */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           <form id="leadForm" onSubmit={handleSubmit} className="space-y-6">
             {generalError && (
@@ -219,7 +219,7 @@ export default function LeadModal({ lead, onClose, onSaved }) {
                   label="Phone" 
                   placeholder="+880 1700..." 
                   value={form.phone} 
-                  onChange={handlePhoneChange} // Uses custom handler
+                  onChange={handlePhoneChange} 
                   error={fieldErrors.phone}
                   type="tel"
                 />
@@ -300,9 +300,15 @@ export default function LeadModal({ lead, onClose, onSaved }) {
                     value={form.status}
                     onChange={(e) => setForm({ ...form, status: e.target.value })}
                   >
-                    <option>New Lead</option>
-                    <option>Not Converted</option>
-                    <option>Converted</option>
+                    {/* NEW STATUS LIST */}
+                    <option value="New Lead">New Lead</option>
+                    <option value="Contacted">Contacted</option>
+                    <option value="Qualified">Qualified</option>
+                    <option value="Proposal Sent">Proposal Sent</option>
+                    <option value="Negotiation">Negotiation</option>
+                    <option value="Closed - Won">Closed - Won</option>
+                    <option value="Closed - Lost">Closed - Lost</option>
+                    <option value="Follow-Up">Follow-Up</option>
                   </select>
                 </div>
               </div>
@@ -323,7 +329,7 @@ export default function LeadModal({ lead, onClose, onSaved }) {
           </form>
         </div>
 
-        {/* Footer (Sticky) */}
+        {/* Footer */}
         <div className="px-4 sm:px-6 py-4 border-t border-gray-100 bg-gray-50 rounded-b-none sm:rounded-b-2xl flex justify-end gap-3 flex-shrink-0">
           <button 
             onClick={onClose} 

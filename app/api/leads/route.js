@@ -24,6 +24,11 @@ export async function GET(req) {
             { company: { $regex: q, $options: "i" } },
             { category: { $regex: q, $options: "i" } },
             { service: { $regex: q, $options: "i" } },
+            { source: { $regex: q, $options: "i" } },
+            { platform: { $regex: q, $options: "i" } },
+            { location: { $regex: q, $options: "i" } },
+            { reference: { $regex: q, $options: "i" } },
+            { note: { $regex: q, $options: "i" } },
           ],
         }
       : {};
@@ -43,15 +48,14 @@ export async function POST(req) {
     await connectMongoose();
     const body = await req.json();
 
-    // Ensure dates are actual Date objects or null
     if (body.date) body.date = new Date(body.date);
     if (body.sendingDate) body.sendingDate = new Date(body.sendingDate);
     if (body.followupDate) body.followupDate = new Date(body.followupDate);
 
     const lead = await Lead.create(body);
 
-    // Auto-convert logic (optional, based on your previous code)
-    if (lead.status === "Converted") {
+    // FIX: Check for "Closed - Won" instead of "Converted"
+    if (lead.status === "Closed - Won") {
       await Client.findOneAndUpdate(
         { email: lead.email ?? undefined },
         {

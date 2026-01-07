@@ -15,7 +15,7 @@ export const authOptions = {
       },
       async authorize(credentials) {
         const client = await clientPromise;
-        const db = client.db("en_crm");
+        const db = client.db(process.env.MONGODB_DB); // Fixed: Use env var
         const users = db.collection("users");
 
         const user = await users.findOne({ email: credentials.email });
