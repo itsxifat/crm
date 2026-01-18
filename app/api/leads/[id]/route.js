@@ -29,16 +29,17 @@ export async function PATCH(req, { params }) {
     const { id } = await params;
     const body = await req.json();
 
+    // Date parsing
     if (body.date) body.date = new Date(body.date);
     if (body.sendingDate) body.sendingDate = new Date(body.sendingDate);
     if (body.followupDate) body.followupDate = new Date(body.followupDate);
 
     const lead = await Lead.findByIdAndUpdate(id, body, { new: true });
 
-    // FIX: Check for "Closed - Won" instead of "Converted"
-    if (lead?.status === "Closed - Won") {
+    // Auto-convert to Client if Won
+    if (lead?.status === "Closed - Won" && lead?.email) {
       await Client.findOneAndUpdate(
-        { email: lead.email ?? undefined },
+        { email: lead.email },
         {
           name: lead.name,
           email: lead.email,

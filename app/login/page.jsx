@@ -7,7 +7,6 @@ import Image from "next/image";
 import { motion } from "framer-motion";
 import { Lock, Mail, Loader2 } from "lucide-react";
 
-// 1. We move all the logic into this inner component
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -146,11 +145,13 @@ function LoginForm() {
   );
 }
 
-// 2. The default export wraps the logic in Suspense
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="w-full max-w-md p-10 text-center text-gray-500">Loading...</div>}>
-      <LoginForm />
-    </Suspense>
+    // FIX: Added the layout wrapper here specifically for the Login page
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
+      <Suspense fallback={<div className="w-full max-w-md p-10 text-center text-gray-500">Loading...</div>}>
+        <LoginForm />
+      </Suspense>
+    </div>
   );
 }

@@ -3,6 +3,8 @@ import { connectMongoose } from "@/lib/mongoose";
 import LeadAttribute from "@/models/LeadAttribute";
 import { requireAdmin, handleAuthError } from "@/lib/requireAdmin";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     await requireAdmin();
@@ -12,7 +14,10 @@ export async function GET() {
     
     return NextResponse.json({
       services: attributes.filter(a => a.type === 'service').map(a => a.name),
-      categories: attributes.filter(a => a.type === 'category').map(a => a.name)
+      categories: attributes.filter(a => a.type === 'category').map(a => a.name),
+      sources: attributes.filter(a => a.type === 'source').map(a => a.name),
+      platforms: attributes.filter(a => a.type === 'platform').map(a => a.name),
+      references: attributes.filter(a => a.type === 'reference').map(a => a.name),
     });
   } catch (e) {
     if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
@@ -43,13 +48,11 @@ export async function POST(req) {
   }
 }
 
-// --- FIX IS HERE ---
 export async function DELETE(req) {
   try {
     await requireAdmin();
     await connectMongoose();
     
-    // 1. Read from URL parameters instead of body
     const { searchParams } = new URL(req.url);
     const type = searchParams.get("type");
     const name = searchParams.get("name");

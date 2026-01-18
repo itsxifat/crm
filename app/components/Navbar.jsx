@@ -4,8 +4,22 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { Search, ChevronDown, LogIn, UserPlus, Menu } from "lucide-react"; // <-- Import Menu icon
+import Link from "next/link";
+import { 
+  Search, ChevronDown, Menu, LogOut, User, Zap, 
+  Briefcase, Building, Receipt, Loader2, Command, Settings 
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
+
+// --- Icons Mapping ---
+const ICONS = {
+  User: User,
+  Lead: Zap,
+  Project: Briefcase,
+  Client: Building,
+  Expense: Receipt,
+  Default: Search
+};
 
 function getInitials(name, email) {
   const n = (name || "").trim();
@@ -17,161 +31,229 @@ function getInitials(name, email) {
   return "?";
 }
 
-// 1. Receive 'onToggleSidebar' prop from layout
 export const Navbar = ({ onToggleSidebar }) => {
   const { data: session, status } = useSession();
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  
+  // Search State
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  
   const dropdownRef = useRef(null);
+  const searchRef = useRef(null);
   const router = useRouter();
 
   const userName = session?.user?.name || "";
   const userEmail = session?.user?.email || "";
   const userImage = session?.user?.image || "";
   const initials = useMemo(() => getInitials(userName, userEmail), [userName, userEmail]);
-  const nameFirst = useMemo(() => (userName ? userName.split(" ")[0] : ""), [userName]);
 
-  // Close dropdown on outside click / Esc
+  // --- Search Logic ---
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(async () => {
+      if (query.trim().length > 0) {
+        setIsSearching(true);
+        try {
+          const res = await fetch(`/api/global-search?q=${encodeURIComponent(query)}`);
+          if (res.ok) {
+            const data = await res.json();
+            setResults(data);
+            setShowResults(true);
+          }
+        } catch (error) {
+          console.error(error);
+        } finally {
+          setIsSearching(false);
+        }
+      } else {
+        setResults([]);
+        setShowResults(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [query]);
+
+  // Close menus on outside click
   useEffect(() => {
     function onDocClick(e) {
-      if (!dropdownRef.current) return;
-      if (!dropdownRef.current.contains(e.target)) setDropdownOpen(false);
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setDropdownOpen(false);
+      }
+      if (searchRef.current && !searchRef.current.contains(e.target)) {
+        setShowResults(false);
+      }
     }
-    function onKey(e) {
-      if (e.key === "Escape") setDropdownOpen(false);
-    }
-    if (dropdownOpen) {
-      document.addEventListener("mousedown", onDocClick);
-      document.addEventListener("keydown", onKey);
-    }
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [dropdownOpen]);
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
 
   return (
-    <nav className="sticky top-0 z-20 bg-white/80 backdrop-blur-md shadow-sm">
-      <div className="container mx-auto flex justify-between items-center py-4 px-4 sm:px-6">
+    <nav className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b border-slate-200/80">
+      <div className="max-w-[1800px] mx-auto flex justify-between items-center h-16 px-4 sm:px-6">
         
-        {/* 2. Hamburger Menu & Logo */}
-        <div className="flex items-center gap-2">
-          {/* Hamburger Menu (Mobile Only) */}
+        {/* LEFT: Menu & Logo */}
+        <div className="flex items-center gap-5">
           <button
-            onClick={onToggleSidebar} // <-- Triggers layout state
-            className="p-2 rounded-md text-gray-600 hover:bg-gray-100 md:hidden"
-            aria-label="Open navigation"
+            onClick={onToggleSidebar}
+            className="p-2 -ml-2 rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition-colors md:hidden"
           >
-            <Menu size={24} />
+            <Menu size={20} />
           </button>
           
-          {/* Logo (Desktop Only) */}
           <div
-            className="hidden md:flex items-center cursor-pointer flex-shrink-0"
+            className="relative h-29 w-29 cursor-pointer select-none hover:opacity-90 transition-opacity"
             onClick={() => router.push("/")}
-            role="button"
-            aria-label="Go to home"
           >
-            <Image src="/logo.png" alt="App Logo" width={120} height={40} priority />
+             <Image 
+               src="/logo.png" 
+               alt="Enfinito Logo" 
+               fill 
+               className="object-contain" 
+               quality={100}
+               priority
+             />
           </div>
         </div>
 
-        {/* Search Box */}
-        <div className="relative flex-grow mx-4 max-w-lg">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
-          <input
-            type="search"
-            placeholder="Search..."
-            className="w-full pl-12 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition"
-          />
+        {/* CENTER: God-Level Search */}
+        <div className="flex-1 max-w-xl mx-6 relative" ref={searchRef}>
+          <div className="relative group">
+            <Search 
+              className={`absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 transition-colors duration-200 ${isSearching ? "text-[#10a37f]" : "text-slate-400 group-focus-within:text-[#10a37f]"}`} 
+            />
+            <input
+              type="text"
+              placeholder="Jump to..."
+              value={query}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                if(e.target.value) setShowResults(true);
+              }}
+              onFocus={() => { if(query && results.length > 0) setShowResults(true); }}
+              className="w-full pl-10 pr-12 py-2 bg-slate-50 border border-slate-200/50 rounded-lg text-sm text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#10a37f]/20 focus:border-[#10a37f] transition-all shadow-sm"
+            />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5 pointer-events-none">
+               {isSearching ? (
+                 <Loader2 className="h-4 w-4 text-[#10a37f] animate-spin" />
+               ) : (
+                 <div className="hidden sm:flex items-center gap-1 px-1.5 py-0.5 rounded border border-slate-200 bg-white">
+                   <Command size={10} className="text-slate-400" /> 
+                   <span className="text-[10px] font-medium text-slate-400">K</span>
+                 </div>
+               )}
+            </div>
+          </div>
+
+          {/* Search Dropdown Results */}
+          <AnimatePresence>
+            {showResults && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                transition={{ duration: 0.1, ease: "easeOut" }}
+                className="absolute top-[calc(100%+8px)] left-0 right-0 bg-white rounded-xl shadow-2xl border border-slate-100 overflow-hidden ring-1 ring-black/5 max-h-[70vh] overflow-y-auto custom-scrollbar z-50"
+              >
+                {results.length > 0 ? (
+                  <div className="py-2">
+                    <div className="px-4 py-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Search Results
+                    </div>
+                    {results.map((item) => {
+                      const Icon = ICONS[item.type] || ICONS.Default;
+                      return (
+                        <Link 
+                          key={`${item.type}-${item.id}`} 
+                          href={item.url}
+                          onClick={() => { setShowResults(false); setQuery(""); }}
+                          className="flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors group border-l-2 border-transparent hover:border-[#10a37f]"
+                        >
+                          <div className={`p-2 rounded-md bg-slate-100 text-slate-500 group-hover:bg-white group-hover:text-[#10a37f] group-hover:shadow-sm transition-all`}>
+                            <Icon size={16} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-medium text-slate-700 group-hover:text-slate-900 truncate">{item.title}</p>
+                              <span className="text-[10px] font-medium text-slate-400 border border-slate-200 px-1.5 rounded-sm">
+                                {item.type}
+                              </span>
+                            </div>
+                            {item.subtitle && (
+                              <p className="text-xs text-slate-400 truncate mt-0.5">{item.subtitle}</p>
+                            )}
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-8 text-center">
+                    <Search className="h-8 w-8 text-slate-200 mx-auto mb-2" />
+                    <p className="text-sm text-slate-500">No results found for "{query}"</p>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
-        {/* Profile/Login Buttons */}
-        <div className="relative flex items-center gap-2 sm:gap-4">
-          {/* Loading shimmer */}
-          {status === "loading" && (
-            <div className="h-10 w-24 rounded-full bg-gray-200/80 animate-pulse" />
-          )}
-
-          {/* Signed out (This part was already responsive, no change) */}
-          {status === "unauthenticated" && (
-            <>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => router.push("/login")}
-                className="flex items-center justify-center p-2.5 sm:px-4 sm:py-2 text-emerald-600 rounded-full font-medium hover:bg-emerald-50 transition sm:gap-2"
-              >
-                <LogIn size={20} />
-                <span className="hidden sm:inline">Log In</span>
-              </motion.button>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => router.push("/signup")}
-                className="flex items-center justify-center p-2.5 sm:px-4 sm:py-2 bg-emerald-600 text-white rounded-full font-medium shadow-md hover:bg-emerald-700 transition sm:gap-2"
-              >
-                <UserPlus size={20} />
-                <span className="hidden sm:inline">Sign Up</span>
-              </motion.button>
-            </>
-          )}
-
-          {/* Signed in (This part was already responsive, no change) */}
+        {/* RIGHT: User Profile */}
+        <div className="flex items-center gap-4">
           {status === "authenticated" && (
             <div className="relative" ref={dropdownRef}>
               <button
-                className="flex items-center gap-2 cursor-pointer text-gray-700 hover:text-gray-900 transition"
-                onClick={() => setDropdownOpen(o => !o)}
-                aria-haspopup="menu"
-                aria-expanded={dropdownOpen}
-                title={userName || userEmail || "Account"}
+                onClick={() => setDropdownOpen(!dropdownOpen)}
+                className={`flex items-center gap-2 p-1 pl-2 rounded-full border transition-all duration-200 ${dropdownOpen ? "bg-slate-50 border-slate-200 ring-2 ring-slate-100" : "bg-white border-transparent hover:bg-slate-50 hover:border-slate-200"}`}
               >
-                <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center text-white font-semibold text-lg ring-2 ring-offset-2 ring-emerald-500 overflow-hidden">
-                  {userImage ? (
-                    <img
-                      src={userImage}
-                      alt={userName || "User"}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    initials
-                  )}
+                <div className="text-right hidden sm:block leading-tight mr-1">
+                   <div className="text-xs font-semibold text-slate-700">{userName.split(' ')[0]}</div>
                 </div>
-                <span className="font-medium hidden md:inline">
-                  {nameFirst || "Account"}
-                </span>
-                <ChevronDown
-                  size={16}
-                  className={`text-gray-500 transition-transform duration-200 ${dropdownOpen ? "rotate-180" : ""}`}
-                />
+                {userImage ? (
+                  <div className="relative h-8 w-8 rounded-full overflow-hidden border border-slate-200 shadow-sm">
+                     <Image src={userImage} alt={userName} fill className="object-cover" />
+                  </div>
+                ) : (
+                  <div className="h-8 w-8 rounded-full bg-gradient-to-br from-[#10a37f] to-emerald-600 flex items-center justify-center text-white text-xs font-bold shadow-sm">
+                    {initials}
+                  </div>
+                )}
+                <ChevronDown size={14} className={`text-slate-400 transition-transform duration-200 mr-1 ${dropdownOpen ? "rotate-180" : ""}`} />
               </button>
 
-              {/* Dropdown Menu */}
               <AnimatePresence>
                 {dropdownOpen && (
                   <motion.div
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -10 }}
-                    transition={{ duration: 0.18 }}
-                    className="absolute right-0 mt-3 w-60 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden"
-                    role="menu"
-                    aria-label="Account Menu"
+                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                    transition={{ duration: 0.1, ease: "easeOut" }}
+                    className="absolute right-0 mt-2 w-64 bg-white border border-slate-100 rounded-xl shadow-xl shadow-slate-200/40 z-50 overflow-hidden origin-top-right p-1.5"
                   >
-                    <div className="p-4 border-b border-gray-200">
-                      <p className="font-semibold text-gray-800 truncate">
-                        {userName || "Signed in"}
+                    <div className="px-3 py-3 mb-1 bg-slate-50 rounded-lg border border-slate-100/50">
+                      <p className="text-sm font-semibold text-slate-900 truncate">
+                        {userName || "User"}
                       </p>
-                      {userEmail ? (
-                        <p className="text-sm text-gray-500 truncate">{userEmail}</p>
-                      ) : null}
+                      <p className="text-xs text-slate-500 truncate font-mono mt-0.5">
+                        {userEmail}
+                      </p>
                     </div>
+                    
+                    <button className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-colors text-left group">
+                      <Settings size={14} className="text-slate-400 group-hover:text-[#10a37f]" />
+                      Account Settings
+                    </button>
+                    
+                    <div className="h-px bg-slate-100 my-1.5" />
+                    
                     <button
                       onClick={() => signOut()}
-                      className="w-full text-left px-4 py-3 text-red-600 font-medium hover:bg-red-50 transition"
-                      role="menuitem"
+                      className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-medium text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors text-left group"
                     >
-                      Sign Out
+                      <LogOut size={14} className="text-slate-400 group-hover:text-red-500" />
+                      Log out
                     </button>
                   </motion.div>
                 )}

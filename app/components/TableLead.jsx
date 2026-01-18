@@ -2,90 +2,125 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { Edit, Trash2, ChevronDown, Check, Loader2 } from "lucide-react";
+import { createPortal } from "react-dom";
+import { 
+  Edit, Trash2, ChevronDown, Check, Loader2, 
+  Phone, Mail, Building, Globe, Layers, User 
+} from "lucide-react";
 
-// --- Configuration ---
+// --- Status Styles (OpenAI Clean Palette) ---
 const STATUS_CONFIG = {
-  "New Lead":      { bg: "bg-blue-100", text: "text-blue-800", ring: "ring-blue-500/30" },
-  "Contacted":     { bg: "bg-indigo-100", text: "text-indigo-800", ring: "ring-indigo-500/30" },
-  "Qualified":     { bg: "bg-purple-100", text: "text-purple-800", ring: "ring-purple-500/30" },
-  "Proposal Sent": { bg: "bg-yellow-100", text: "text-yellow-800", ring: "ring-yellow-500/30" },
-  "Negotiation":   { bg: "bg-orange-100", text: "text-orange-800", ring: "ring-orange-500/30" },
-  "Closed - Won":  { bg: "bg-emerald-100", text: "text-emerald-800", ring: "ring-emerald-500/30" },
-  "Closed - Lost": { bg: "bg-red-100", text: "text-red-800", ring: "ring-red-500/30" },
-  "Follow-Up":     { bg: "bg-cyan-100", text: "text-cyan-800", ring: "ring-cyan-500/30" },
+  "New Lead":      { bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-600" },
+  "Contacted":     { bg: "bg-indigo-50", text: "text-indigo-700", dot: "bg-indigo-600" },
+  "Qualified":     { bg: "bg-purple-50", text: "text-purple-700", dot: "bg-purple-600" },
+  "Proposal Sent": { bg: "bg-amber-50", text: "text-amber-700", dot: "bg-amber-600" },
+  "Negotiation":   { bg: "bg-orange-50", text: "text-orange-700", dot: "bg-orange-600" },
+  "Closed - Won":  { bg: "bg-emerald-50", text: "text-emerald-700", dot: "bg-emerald-600" },
+  "Closed - Lost": { bg: "bg-red-50", text: "text-red-700", dot: "bg-red-600" },
+  "Follow-Up":     { bg: "bg-cyan-50", text: "text-cyan-700", dot: "bg-cyan-600" },
 };
 
 const STATUS_OPTIONS = Object.keys(STATUS_CONFIG);
 
-// --- Status Dropdown Component ---
+// --- Status Dropdown with Fixed Portal ---
 function StatusDropdown({ initialStatus, leadId }) {
   const [status, setStatus] = useState(initialStatus);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const dropdownRef = useRef(null);
+  const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
+  const buttonRef = useRef(null);
 
+  // Update local state if prop changes
   useEffect(() => { setStatus(initialStatus); }, [initialStatus]);
 
+  // Calculate Fixed Position to avoid clipping
   useEffect(() => {
-    function handleClickOutside(event) {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setIsOpen(false);
-      }
+    if (isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const heightNeeded = 280; // approximate dropdown height
+      const showAbove = spaceBelow < heightNeeded;
+
+      setCoords({
+        left: rect.left,
+        top: showAbove ? rect.top - 4 : rect.bottom + 4,
+        width: 170, // Fixed width for dropdown
+        placement: showAbove ? "bottom" : "top"
+      });
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [isOpen]);
+
+  // Close on outside click or scroll
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleGlobalClick = (e) => {
+      // Ignore clicks inside the button or the portal menu
+      if (buttonRef.current?.contains(e.target)) return;
+      if (e.target.closest('.status-portal-menu')) return;
+      setIsOpen(false);
+    };
+    // Close on scroll to prevent detached UI
+    window.addEventListener("scroll", () => setIsOpen(false), true);
+    window.addEventListener("mousedown", handleGlobalClick);
+    return () => {
+      window.removeEventListener("scroll", () => setIsOpen(false), true);
+      window.removeEventListener("mousedown", handleGlobalClick);
+    };
+  }, [isOpen]);
 
   const handleSelect = async (newStatus) => {
-    if (newStatus === status) {
-      setIsOpen(false);
-      return;
-    }
+    if (newStatus === status) { setIsOpen(false); return; }
     setIsOpen(false);
     setIsLoading(true);
     
     try {
-      const oldStatus = status; 
-      setStatus(newStatus); // Optimistic Update
-
+      setStatus(newStatus); // Optimistic UI
       const res = await fetch(`/api/leads/${leadId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
-
-      if (!res.ok) throw new Error("Failed to update");
+      if (!res.ok) throw new Error("Failed");
     } catch (error) {
-      console.error("Status update failed:", error);
-      setStatus(initialStatus); // Revert
+      setStatus(initialStatus); // Revert on error
     } finally {
       setIsLoading(false);
     }
   };
 
-  const styles = STATUS_CONFIG[status] || STATUS_CONFIG["New Lead"];
+  const style = STATUS_CONFIG[status] || STATUS_CONFIG["New Lead"];
 
   return (
-    <div className="relative inline-block text-left" ref={dropdownRef}>
+    <>
       <button
-        type="button"
+        ref={buttonRef}
         onClick={() => !isLoading && setIsOpen(!isOpen)}
         disabled={isLoading}
-        className={`group inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold rounded-full transition-all duration-200 border border-transparent
-          ${styles.bg} ${styles.text} ${isOpen ? `ring-2 ${styles.ring}` : "hover:brightness-95"}
-          ${isLoading ? "opacity-75 cursor-wait" : "cursor-pointer"}
+        className={`group relative inline-flex items-center gap-2 pl-2.5 pr-2 py-1.5 text-[11px] font-bold uppercase tracking-wide rounded-md border transition-all duration-200
+          ${style.bg} ${style.text} border-transparent hover:border-current hover:brightness-95
+          ${isLoading ? "opacity-70 cursor-wait" : ""}
         `}
       >
-        {isLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <span className="truncate max-w-[80px] sm:max-w-[100px]">{status}</span>}
-        {!isLoading && (
-          <ChevronDown className={`h-3 w-3 transition-transform duration-200 ${isOpen ? "rotate-180" : "text-current/60"}`} />
+        {isLoading ? (
+          <Loader2 className="h-3 w-3 animate-spin" />
+        ) : (
+          <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
         )}
+        <span className="truncate max-w-[90px] text-left">{status}</span>
+        <ChevronDown className={`h-3 w-3 opacity-50 transition-transform ${isOpen ? "rotate-180" : ""}`} />
       </button>
 
-      {isOpen && (
-        <div className="absolute left-0 top-full mt-2 w-48 bg-white rounded-xl shadow-xl border border-gray-100 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
-          <div className="py-1 max-h-[300px] overflow-y-auto custom-scrollbar">
+      {isOpen && createPortal(
+        <div 
+          className="status-portal-menu fixed z-[9999] bg-white rounded-lg shadow-xl border border-slate-100 ring-1 ring-black/5 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-100 origin-top-left"
+          style={{
+            top: coords.placement === "bottom" ? 'auto' : coords.top,
+            bottom: coords.placement === "bottom" ? (window.innerHeight - coords.top) : 'auto',
+            left: coords.left,
+            width: coords.width
+          }}
+        >
+          <div className="py-1 max-h-[260px] overflow-y-auto custom-scrollbar">
             {STATUS_OPTIONS.map((option) => {
               const optStyle = STATUS_CONFIG[option];
               const isSelected = status === option;
@@ -93,26 +128,27 @@ function StatusDropdown({ initialStatus, leadId }) {
                 <button
                   key={option}
                   onClick={() => handleSelect(option)}
-                  className={`w-full text-left px-4 py-2.5 text-xs font-medium flex items-center justify-between group transition-colors
-                    ${isSelected ? "bg-gray-50 text-gray-900" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"}
+                  className={`w-full text-left px-3 py-2 text-xs font-medium flex items-center justify-between transition-colors
+                    ${isSelected ? "bg-slate-50 text-slate-900" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"}
                   `}
                 >
                   <div className="flex items-center gap-2">
-                    <span className={`w-2 h-2 rounded-full ${optStyle.text.replace('text-', 'bg-').replace('800', '500')}`} />
+                    <span className={`w-1.5 h-1.5 rounded-full ${optStyle.dot}`} />
                     {option}
                   </div>
-                  {isSelected && <Check className="h-3.5 w-3.5 text-emerald-600" />}
+                  {isSelected && <Check className="h-3 w-3 text-[#10a37f]" />}
                 </button>
               );
             })}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
-    </div>
+    </>
   );
 }
 
-// --- Table Component ---
+// --- Main Table ---
 export default function TableLead({ data = [], onEdit, onDeleted }) {
   async function handleDelete(id) {
     if (!confirm("Are you sure you want to delete this lead?")) return;
@@ -121,81 +157,133 @@ export default function TableLead({ data = [], onEdit, onDeleted }) {
   }
 
   return (
-    <div className="border border-gray-200 rounded-lg bg-white shadow-sm overflow-x-auto min-h-[400px]">
-      <table className="min-w-full text-sm border-separate border-spacing-0">
-        <thead className="bg-gray-50 text-gray-600 sticky top-0 z-10">
-          <tr>
-            <th className="sticky left-0 z-20 border-b border-gray-200 bg-gray-50 px-4 py-3 text-left text-xs font-semibold text-gray-900 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Lead Details</th>
-            <th className="border-b border-gray-200 bg-gray-50 px-4 py-3 text-left text-xs font-semibold text-gray-900">Status</th>
-            <th className="hidden sm:table-cell border-b border-gray-200 bg-gray-50 px-4 py-3 text-left text-xs font-semibold text-gray-900">Contact</th>
-            <th className="hidden md:table-cell border-b border-gray-200 bg-gray-50 px-4 py-3 text-left text-xs font-semibold text-gray-900">Source</th>
-            <th className="border-b border-gray-200 bg-gray-50 px-4 py-3 text-right text-xs font-semibold text-gray-900">Actions</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-gray-100">
-          {data.length === 0 && (
-            <tr>
-              <td colSpan="5" className="text-center p-8 text-gray-500">No leads found</td>
-            </tr>
-          )}
+    <div className="border border-slate-200 rounded-lg bg-white shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden font-sans">
+      <div className="overflow-x-auto min-h-[300px]">
+        <table className="min-w-full text-sm border-separate border-spacing-0">
           
-          {data.map((lead) => (
-            <tr key={lead._id} className="hover:bg-gray-50 transition-colors group">
-              
-              {/* Name & Company */}
-              <td className="sticky left-0 z-10 border-b border-gray-100 bg-white group-hover:bg-gray-50 px-4 py-3 align-middle shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                <div className="flex flex-col max-w-[160px] sm:max-w-xs">
-                  <Link href={`/leads/${lead._id}`} className="text-sm font-medium text-gray-900 hover:text-emerald-600 truncate">
-                    {lead.name}
-                  </Link>
-                  {lead.company ? (
-                    <span className="text-xs text-gray-500 truncate mt-0.5">{lead.company}</span>
-                  ) : (
-                    <span className="text-xs text-gray-300 italic mt-0.5">No Company</span>
-                  )}
-                  {/* Mobile Badges */}
-                  <div className="flex gap-1 mt-1 sm:hidden flex-wrap">
-                    {lead.service && <span className="text-[9px] px-1.5 py-0.5 bg-gray-100 rounded text-gray-600 truncate max-w-[80px]">{lead.service}</span>}
-                  </div>
-                </div>
-              </td>
-
-              {/* Status Dropdown */}
-              <td className="border-b border-gray-100 px-4 py-3 align-middle overflow-visible">
-                <StatusDropdown initialStatus={lead.status} leadId={lead._id} />
-              </td>
-
-              {/* Contact */}
-              <td className="hidden sm:table-cell border-b border-gray-100 px-4 py-3 align-middle">
-                <div className="flex flex-col gap-1 text-xs text-gray-600">
-                  {lead.email && <span className="truncate max-w-[150px]">{lead.email}</span>}
-                  {lead.phone && <span>{lead.phone}</span>}
-                </div>
-              </td>
-
-              {/* Source */}
-              <td className="hidden md:table-cell border-b border-gray-100 px-4 py-3 align-middle text-xs text-gray-500">
-                <div className="flex flex-col gap-1">
-                  <span>{lead.source || "—"}</span>
-                  {lead.service && <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 rounded-full w-fit">{lead.service}</span>}
-                </div>
-              </td>
-
-              {/* Actions */}
-              <td className="border-b border-gray-100 px-4 py-3 text-right align-middle">
-                <div className="flex justify-end gap-1">
-                  <button onClick={() => onEdit(lead)} className="p-2 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors">
-                    <Edit size={16} />
-                  </button>
-                  <button onClick={() => handleDelete(lead._id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </td>
+          {/* Header */}
+          <thead className="bg-slate-50/80 backdrop-blur-sm text-slate-500">
+            <tr>
+              <th className="sticky left-0 z-20 border-b border-slate-200 bg-slate-50/95 px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)] w-[220px] sm:w-auto">Identity</th>
+              <th className="border-b border-slate-200 px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest w-[140px]">Status</th>
+              <th className="hidden sm:table-cell border-b border-slate-200 px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest">Contact</th>
+              <th className="hidden md:table-cell border-b border-slate-200 px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest">Context</th>
+              <th className="border-b border-slate-200 px-4 py-3 text-right text-[10px] font-bold uppercase tracking-widest w-[80px]">Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+
+          {/* Body */}
+          <tbody className="divide-y divide-slate-100 bg-white">
+            {data.length === 0 && (
+              <tr>
+                <td colSpan="5" className="p-12 text-center text-slate-400 text-sm">
+                  No leads found. Try adjusting your filters.
+                </td>
+              </tr>
+            )}
+            
+            {data.map((lead) => (
+              <tr key={lead._id} className="hover:bg-slate-50/60 transition-colors group">
+                
+                {/* 1. Identity (Name, Designation, Company) */}
+                <td className="sticky left-0 z-10 border-b border-slate-100 bg-white group-hover:bg-slate-50/60 px-4 py-3 align-top shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)]">
+                  <div className="flex flex-col gap-1 max-w-[200px]">
+                    <div className="flex items-center gap-2">
+                      <Link href={`/leads/${lead._id}`} className="text-sm font-bold text-slate-900 hover:text-[#10a37f] transition-colors truncate">
+                        {lead.name}
+                      </Link>
+                    </div>
+                    {/* Name & Designation Line */}
+                    {lead.designation && (
+                      <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                        <User className="h-3 w-3 text-slate-300" />
+                        <span className="truncate">{lead.designation}</span>
+                      </div>
+                    )}
+                    {/* Company Line */}
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                       <Building className="h-3 w-3 text-slate-300" />
+                       <span className="truncate font-medium">{lead.company || "No Company"}</span>
+                    </div>
+                  </div>
+                </td>
+
+                {/* 2. Status */}
+                <td className="border-b border-slate-100 px-4 py-3 align-top">
+                  <StatusDropdown initialStatus={lead.status} leadId={lead._id} />
+                </td>
+
+                {/* 3. Contact (Hidden Mobile) */}
+                <td className="hidden sm:table-cell border-b border-slate-100 px-4 py-3 align-top">
+                  <div className="flex flex-col gap-1.5">
+                    {lead.email && (
+                      <div className="flex items-center gap-2 text-xs text-slate-600 group/item hover:text-slate-900 transition-colors">
+                        <Mail className="h-3.5 w-3.5 text-slate-400" />
+                        <span className="truncate max-w-[180px] font-medium">{lead.email}</span>
+                      </div>
+                    )}
+                    {lead.phone && (
+                      <div className="flex items-center gap-2 text-xs text-slate-500 group/item">
+                        <Phone className="h-3.5 w-3.5 text-slate-400" />
+                        <span className="font-mono">{lead.phone}</span>
+                      </div>
+                    )}
+                    {!lead.email && !lead.phone && <span className="text-xs text-slate-300 italic">—</span>}
+                  </div>
+                </td>
+
+                {/* 4. Context (Source, Platform, Service) - Hidden Tablet */}
+                <td className="hidden md:table-cell border-b border-slate-100 px-4 py-3 align-top">
+                  <div className="flex flex-col gap-2 items-start">
+                    
+                    {/* Source & Platform Tags */}
+                    <div className="flex flex-wrap gap-1.5">
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
+                        <Globe className="h-3 w-3 text-slate-400" />
+                        {lead.source || "N/A"}
+                      </span>
+                      {lead.platform && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
+                          <Layers className="h-3 w-3 text-slate-400" />
+                          {lead.platform}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Service Badge */}
+                    {lead.service && (
+                      <span className="text-[10px] font-bold text-[#10a37f] px-2 py-0.5 bg-[#10a37f]/5 rounded border border-[#10a37f]/20 truncate max-w-[140px]">
+                        {lead.service}
+                      </span>
+                    )}
+                  </div>
+                </td>
+
+                {/* 5. Actions */}
+                <td className="border-b border-slate-100 px-4 py-3 text-right align-top">
+                  <div className="flex justify-end gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                    <button 
+                      onClick={() => onEdit(lead)} 
+                      className="p-1.5 text-slate-400 hover:text-[#10a37f] hover:bg-[#10a37f]/5 rounded-md transition-colors"
+                      title="Edit details"
+                    >
+                      <Edit size={15} />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(lead._id)} 
+                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                      title="Delete permanently"
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
+                </td>
+
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

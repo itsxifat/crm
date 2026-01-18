@@ -15,12 +15,15 @@ export async function GET(req) {
     const { searchParams } = new URL(req.url);
     const q = (searchParams.get("q") || "").trim();
 
+    // Expanded search to include new fields
     const filter = q
       ? {
           $or: [
             { name: { $regex: q, $options: "i" } },
+            { designation: { $regex: q, $options: "i" } }, // NEW
             { email: { $regex: q, $options: "i" } },
             { phone: { $regex: q, $options: "i" } },
+            { alternativePhone: { $regex: q, $options: "i" } }, // NEW
             { company: { $regex: q, $options: "i" } },
             { category: { $regex: q, $options: "i" } },
             { service: { $regex: q, $options: "i" } },
@@ -48,21 +51,25 @@ export async function POST(req) {
     await connectMongoose();
     const body = await req.json();
 
+    // Date parsing
     if (body.date) body.date = new Date(body.date);
+    else delete body.date; // Use default in schema if missing
+
     if (body.sendingDate) body.sendingDate = new Date(body.sendingDate);
     if (body.followupDate) body.followupDate = new Date(body.followupDate);
 
     const lead = await Lead.create(body);
 
-    // FIX: Check for "Closed - Won" instead of "Converted"
-    if (lead.status === "Closed - Won") {
+    // Auto-convert to Client if status is "Closed - Won" AND email exists
+    if (lead.status === "Closed - Won" && lead.email) {
       await Client.findOneAndUpdate(
-        { email: lead.email ?? undefined },
+        { email: lead.email },
         {
           name: lead.name,
           email: lead.email,
           phone: lead.phone,
           companyName: lead.company,
+          // We can map more fields here if the Client model supports them
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
