@@ -6,25 +6,18 @@ import { requireAdmin } from "@/lib/requireAdmin";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 
-// Helper to save file locally
+// Support file uploads
+export const runtime = "nodejs";
+
+// Helper: Save File
 async function saveFile(file) {
-  if (!file) return null;
-  
+  if (!file || typeof file !== "object") return null;
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
-  
-  // Create filename
   const filename = `${Date.now()}-${file.name.replace(/\s/g, '_')}`;
-  
-  // Define upload directory
   const uploadDir = path.join(process.cwd(), "public", "uploads");
-  
-  // FIX: Create directory if it doesn't exist to prevent ENOENT
   await mkdir(uploadDir, { recursive: true });
-
-  // Save file
   await writeFile(path.join(uploadDir, filename), buffer);
-  
   return `/uploads/${filename}`;
 }
 
@@ -35,63 +28,72 @@ export async function POST(req) {
 
     const formData = await req.formData();
     const leadId = formData.get("leadId");
-    
-    // Fetch original Lead
-    const lead = await Lead.findById(leadId);
-    if (!lead) return NextResponse.json({ error: "Lead not found" }, { status: 404 });
 
-    // Handle Logo Upload
-    const logoFile = formData.get("logo");
-    let logoUrl = "";
-    // Check if it's a valid file object
-    if (logoFile && typeof logoFile === 'object' && logoFile.size > 0) {
-        logoUrl = await saveFile(logoFile);
+    if (!leadId) {
+      return NextResponse.json({ error: "Lead ID is required" }, { status: 400 });
     }
 
-    // Parse JSON strings safely
-    const parseJSON = (str, fallback) => {
-      try { return JSON.parse(str); } catch (e) { return fallback; }
+    // 1. Process Files
+    const logoUrl = await saveFile(formData.get("logo"));
+    const nidUrl = await saveFile(formData.get("nidFile"));
+    const tradeUrl = await saveFile(formData.get("tradeLicenseFile"));
+
+    // 2. Prepare KYC Array
+    const kycDocuments = [];
+    if (nidUrl) kycDocuments.push({ name: "National ID", url: nidUrl, uploadedAt: new Date() });
+    if (tradeUrl) kycDocuments.push({ name: "Trade License", url: tradeUrl, uploadedAt: new Date() });
+
+    // 3. Parse Address
+    const address = {
+      line1: formData.get("address.line1"),
+      line2: formData.get("address.line2"),
+      city: formData.get("address.city"),
+      state: formData.get("address.state"),
+      postalCode: formData.get("address.postalCode"),
+      country: formData.get("address.country"),
     };
 
-    // Prepare Client Data
-    const clientData = {
-      clientName: formData.get("clientName") || lead.name,
-      companyName: formData.get("companyName") || lead.company,
-      designation: formData.get("designation") || lead.designation,
-      email: formData.get("email") || lead.email,
-      phone: formData.get("phone") || lead.phone,
-      alternativePhone: formData.get("alternativePhone") || lead.alternativePhone,
+    // 4. Parse Links
+    let links = [];
+    try {
+      links = JSON.parse(formData.get("links") || "[]");
+    } catch (e) { links = []; }
+
+    // 5. Create Client Object
+    const newClient = await Client.create({
+      clientName: formData.get("clientName"),
+      companyName: formData.get("companyName"),
+      designation: formData.get("designation"),
+      email: formData.get("email"),
+      phone: formData.get("phone"),
+      alternativePhone: formData.get("alternativePhone"),
       website: formData.get("website"),
-      links: parseJSON(formData.get("links"), []),
-      address: parseJSON(formData.get("address"), {}),
-      
+      priority: formData.get("priority") || "Normal",
+      address: address,
+      links: links,
       logo: logoUrl,
+      kycDocuments: kycDocuments,
       
-      // Link History
-      convertedFrom: lead._id,
-      leadHistory: lead.comments || [], 
-      joiningDate: new Date()
-    };
+      // Link back to Lead
+      convertedFrom: leadId,
+      joiningDate: new Date(),
+    });
 
-    // Create Client
-    const newClient = await Client.create(clientData);
+    // 6. Update Lead Status
+    await Lead.findByIdAndUpdate(leadId, {
+      status: "Closed - Won",
+      isConverted: true,
+      convertedClient: newClient._id
+    });
 
-    // Update Lead Status
-    lead.status = "Closed - Won";
-    await lead.save();
-
-    return NextResponse.json({ success: true, clientId: newClient._id });
+    return NextResponse.json({ 
+      success: true, 
+      clientId: newClient._id,
+      message: "Lead converted successfully" 
+    });
 
   } catch (e) {
     console.error("Conversion Error:", e);
-
-    // --- FIX: Handle Duplicate Email Error ---
-    if (e.code === 11000 && e.keyPattern?.email) {
-      return NextResponse.json({ 
-        error: "A client with this email address already exists." 
-      }, { status: 409 }); // 409 Conflict
-    }
-
-    return NextResponse.json({ error: e.message || "Server Error" }, { status: 500 });
+    return NextResponse.json({ error: e.message || "Server error" }, { status: 500 });
   }
 }

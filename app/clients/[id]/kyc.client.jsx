@@ -1,179 +1,262 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { FileText, FileDown, ImageIcon, RefreshCw } from "lucide-react";
+import { FileText, FileDown, ImageIcon, Upload, Loader2, X, Trash2, ShieldCheck, Briefcase } from "lucide-react";
+import { useRouter } from "next/navigation";
 
-/* UI bits */
-function Spinner({ className = "" }) {
+/* --- 1. UI: File Card (Premium Look) --- */
+function FileCard({ doc, onDelete, typeLabel, icon: Icon }) {
+  if (!doc?.url) return null;
+
+  const ext = doc.url.split('.').pop().toLowerCase();
+  const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+  const isPdf = ext === 'pdf';
+
   return (
-    <div className={`inline-block h-5 w-5 animate-spin rounded-full border-2 border-gray-300 border-t-gray-600 ${className}`} />
-  );
-}
-function LoadingOverlay() {
-  return (
-    <div className="relative">
-      <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 backdrop-blur-sm">
-        <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-2 shadow-sm">
-          <Spinner />
-          <span className="text-sm text-gray-700">Loading KYC…</span>
+    <div className="group relative flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all overflow-hidden h-full">
+      {/* Header Label */}
+      {typeLabel && (
+        <div className="bg-slate-50 px-4 py-2 border-b border-slate-100 flex items-center gap-2 text-xs font-bold text-slate-500 uppercase tracking-wider">
+          {Icon && <Icon className="h-3 w-3" />}
+          {typeLabel}
+        </div>
+      )}
+
+      {/* Preview Body */}
+      <div className="relative flex-1 bg-slate-50/30 p-4 flex items-center justify-center min-h-[140px]">
+        {isImage ? (
+          <img src={doc.url} alt={doc.name} className="max-h-[120px] w-auto object-contain rounded-md shadow-sm" />
+        ) : isPdf ? (
+          <div className="flex flex-col items-center text-slate-400 gap-1">
+             <FileText className="h-10 w-10" />
+             <span className="text-[10px] font-medium">PDF Document</span>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center text-slate-400 gap-1">
+             <ImageIcon className="h-10 w-10" />
+             <span className="text-[10px] font-medium">{ext.toUpperCase()} File</span>
+          </div>
+        )}
+
+        {/* Hover Actions */}
+        <div className="absolute inset-0 bg-black/0 group-hover:bg-slate-900/40 transition-all flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 backdrop-blur-[1px]">
+           <a href={doc.url} download target="_blank" rel="noreferrer" className="p-2 bg-white rounded-full text-slate-700 hover:text-[#10a37f] shadow-lg transition-transform hover:scale-110" title="Download">
+             <FileDown className="h-4 w-4" />
+           </a>
+           <button onClick={() => onDelete(doc._id)} className="p-2 bg-white rounded-full text-slate-700 hover:text-red-500 shadow-lg transition-transform hover:scale-110" title="Delete">
+             <Trash2 className="h-4 w-4" />
+           </button>
+        </div>
+      </div>
+
+      {/* Footer Details */}
+      <div className="px-4 py-3 bg-white border-t border-slate-100">
+        <div className="flex items-center justify-between">
+          <div className="truncate text-sm font-semibold text-slate-700 max-w-[70%]">{doc.name}</div>
+          <span className="text-[10px] font-mono text-slate-400">{ext.toUpperCase()}</span>
+        </div>
+        <div className="text-[10px] text-slate-400 mt-0.5">
+          Uploaded {new Date(doc.uploadedAt).toLocaleDateString()}
         </div>
       </div>
     </div>
   );
 }
-function SkeletonFile() {
+
+/* --- 2. UI: Upload Placeholder (Empty Slot) --- */
+function UploadSlot({ label, icon: Icon, onUpload, loading }) {
+  const [dragActive, setDragActive] = useState(false);
+
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (file) onUpload(file);
+  };
+
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm animate-pulse">
-      <div className="mb-3 h-4 w-48 rounded bg-gray-200" />
-      <div className="h-[240px] w-full rounded-lg bg-gray-100" />
-      <div className="mt-3 h-9 w-28 rounded bg-gray-200" />
-    </div>
-  );
-}
-function FileBlock({ file, label }) {
-  if (!file?.path) return null;
-  const isImage = (file.mimetype || "").startsWith("image/");
-  const isPdf = (file.mimetype || "").toLowerCase().includes("pdf");
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="mb-3 flex items-center gap-2 text-sm text-gray-700">
-        <FileText className="h-4 w-4" />
-        <span className="font-medium">{label}</span>
-        <span className="text-gray-400">•</span>
-        <span className="text-gray-500">{file.filename}</span>
-      </div>
-      <div className="rounded-lg border border-gray-100 bg-gray-50 p-2">
-        {isImage ? (
-          <img src={file.path} alt={label} loading="lazy" className="max-h-[380px] w-auto rounded-md object-contain mx-auto" />
-        ) : isPdf ? (
-          <iframe src={file.path} className="w-full h-[420px] rounded-md bg-white" title={label} loading="lazy" />
-        ) : (
-          <div className="flex items-center justify-between p-3">
-            <div className="flex items-center gap-2 text-gray-600">
-              <ImageIcon className="h-4 w-4" />
-              <span>No inline preview for this file type.</span>
-            </div>
-            <a href={file.path} download className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">
-              <FileDown className="h-4 w-4" />
-              Download
-            </a>
-          </div>
-        )}
-      </div>
-      <div className="mt-3">
-        <a href={file.path} download className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100">
-          <FileDown className="h-4 w-4" />
-          Download
-        </a>
-      </div>
+    <div className={`relative h-full min-h-[200px] rounded-xl border-2 border-dashed flex flex-col items-center justify-center text-center p-6 transition-all ${dragActive ? 'border-[#10a37f] bg-[#10a37f]/5' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}>
+      <input 
+        type="file" 
+        onChange={handleFile} 
+        disabled={loading}
+        className="absolute inset-0 opacity-0 cursor-pointer z-10 disabled:cursor-not-allowed"
+        onDragEnter={() => setDragActive(true)}
+        onDragLeave={() => setDragActive(false)}
+        onDrop={() => setDragActive(false)}
+      />
+      
+      {loading ? (
+        <Loader2 className="h-8 w-8 text-[#10a37f] animate-spin mb-3" />
+      ) : (
+        <div className="bg-white p-3 rounded-full shadow-sm mb-3 border border-slate-100">
+          <Upload className="h-6 w-6 text-slate-400" />
+        </div>
+      )}
+      
+      <h4 className="text-sm font-bold text-slate-700 mb-1">{loading ? "Uploading..." : `Upload ${label}`}</h4>
+      <p className="text-xs text-slate-400 px-4">Drag & drop or click to browse</p>
     </div>
   );
 }
 
-/* fetch helpers */
-async function fetchWithTimeout(url, { timeout = 15000, ...options } = {}) {
-  const ctrl = new AbortController();
-  const id = setTimeout(() => ctrl.abort("timeout"), timeout);
-  try {
-    const res = await fetch(url, { ...options, signal: ctrl.signal, cache: "no-store" });
-    return res;
-  } finally {
-    clearTimeout(id);
-  }
-}
-async function fetchKyc(clientId, { attempts = 3, timeout = 15000, delayBase = 600 } = {}) {
-  let lastErr;
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const res = await fetchWithTimeout(`/api/clients/${encodeURIComponent(clientId)}/kyc`, { timeout });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-
-      const nid = json?.nidFile ?? json?.kyc?.nidFile ?? null;
-      const tl  = json?.tradeLicenseFile ?? json?.kyc?.tradeLicenseFile ?? null;
-
-      const withPath = (obj, field) =>
-        obj
-          ? {
-              filename: obj.filename || "",
-              mimetype: obj.mimetype || "",
-              size: obj.size || 0,
-              path: obj.path || `/api/clients/${encodeURIComponent(clientId)}/files/${field}`,
-            }
-          : null;
-
-      return { nidFile: withPath(nid, "nidFile"), tradeLicenseFile: withPath(tl, "tradeLicenseFile") };
-    } catch (e) {
-      lastErr = e;
-      await new Promise((r) => setTimeout(r, delayBase * Math.pow(2, i)));
-    }
-  }
-  throw lastErr || new Error("Failed to load KYC");
-}
-
-/* main */
+/* --- 3. Main Logic --- */
 export default function KycSection({ clientId }) {
-  const [kyc, setKyc] = useState(null);
+  const router = useRouter();
+  const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState("");
+  const [uploadingType, setUploadingType] = useState(null); // 'NID', 'Trade License', or 'General'
 
+  // --- 3a. Fetch Data ---
   const load = useCallback(async () => {
+    if (!clientId) return;
     setLoading(true);
-    setErr("");
     try {
-      const data = await fetchKyc(clientId);
-      setKyc(data);
+      const res = await fetch(`/api/clients/${clientId}`, { cache: "no-store" });
+      if (res.ok) {
+        const data = await res.json();
+        setDocuments(data.kycDocuments || []);
+      }
     } catch (e) {
-      console.error("KYC load error:", e);
-      setErr(e?.message || "Failed to load KYC");
-      setKyc(null);
+      console.error(e);
     } finally {
       setLoading(false);
     }
   }, [clientId]);
 
-  useEffect(() => {
-    load(); // start immediately
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
-  if (loading) {
-    return (
-      <div className="relative">
-        <LoadingOverlay />
-        <div className="grid gap-6 opacity-60">
-          <SkeletonFile />
-          <SkeletonFile />
-        </div>
-      </div>
-    );
-  }
+  // --- 3b. Computed State (Slots) ---
+  const nidDoc = documents.find(d => d.name === "National ID");
+  const tradeDoc = documents.find(d => d.name === "Trade License");
+  const otherDocs = documents.filter(d => d.name !== "National ID" && d.name !== "Trade License");
 
-  if (err) {
-    return (
-      <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
-        <div className="flex items-center justify-between">
-          <span>{err}</span>
-          <button
-            onClick={load}
-            className="inline-flex items-center gap-2 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-sm font-medium text-rose-700 hover:bg-rose-50"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // --- 3c. Actions ---
+  const handleUpload = async (file, type) => {
+    if (!file) return;
+    setUploadingType(type);
 
-  const hasAny = kyc?.nidFile || kyc?.tradeLicenseFile;
-  if (!hasAny) {
-    return <div className="rounded-2xl border border-gray-200 bg-white p-4 text-sm text-gray-600">No KYC files uploaded.</div>;
-  }
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      // Auto-name specific slots, or use filename for general
+      const name = type === "General" ? file.name : type; 
+      formData.append("name", name);
+
+      const res = await fetch(`/api/clients/${clientId}`, {
+        method: "PATCH",
+        body: formData,
+      });
+
+      if (!res.ok) throw new Error("Upload failed");
+      const updated = await res.json();
+      setDocuments(updated.kycDocuments || []);
+      router.refresh();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setUploadingType(null);
+    }
+  };
+
+  const handleDelete = async (docId) => {
+    if (!confirm("Permanently delete this document?")) return;
+    
+    // Optimistic Update
+    const prevDocs = documents;
+    setDocuments(prev => prev.filter(d => d._id !== docId));
+
+    try {
+      const res = await fetch(`/api/clients/${clientId}?docId=${docId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Delete failed");
+      router.refresh();
+    } catch (e) {
+      setDocuments(prevDocs); // Revert
+      alert("Failed to delete document");
+    }
+  };
+
+  if (!clientId) return null;
 
   return (
-    <div className="grid gap-6">
-      <FileBlock file={kyc.nidFile} label="NID" />
-      <FileBlock file={kyc.tradeLicenseFile} label="Trade License" />
+    <div className="space-y-8">
+      
+      {/* Primary KYC Slots */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        
+        {/* NID Slot */}
+        <div className="space-y-3">
+          {nidDoc ? (
+            <FileCard 
+              doc={nidDoc} 
+              onDelete={handleDelete} 
+              typeLabel="National ID" 
+              icon={ShieldCheck} 
+            />
+          ) : (
+            <UploadSlot 
+              label="National ID" 
+              icon={ShieldCheck} 
+              loading={uploadingType === "National ID"} 
+              onUpload={(f) => handleUpload(f, "National ID")} 
+            />
+          )}
+        </div>
+
+        {/* Trade License Slot */}
+        <div className="space-y-3">
+          {tradeDoc ? (
+            <FileCard 
+              doc={tradeDoc} 
+              onDelete={handleDelete} 
+              typeLabel="Trade License" 
+              icon={Briefcase} 
+            />
+          ) : (
+            <UploadSlot 
+              label="Trade License" 
+              icon={Briefcase} 
+              loading={uploadingType === "Trade License"} 
+              onUpload={(f) => handleUpload(f, "Trade License")} 
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Additional Documents Section */}
+      <div className="pt-6 border-t border-slate-100">
+        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4">Additional Files</h4>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* General Upload Button */}
+          <div className="md:col-span-1">
+             <div className="relative h-full min-h-[120px] rounded-xl border border-dashed border-slate-300 bg-slate-50 hover:bg-slate-100 flex flex-col items-center justify-center transition-colors cursor-pointer group">
+                <input 
+                  type="file" 
+                  onChange={(e) => handleUpload(e.target.files?.[0], "General")}
+                  disabled={!!uploadingType}
+                  className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                />
+                {uploadingType === "General" ? (
+                   <Loader2 className="h-6 w-6 text-[#10a37f] animate-spin" />
+                ) : (
+                   <>
+                     <div className="p-2 bg-white rounded-full shadow-sm mb-2 group-hover:scale-110 transition-transform">
+                        <Upload className="h-4 w-4 text-slate-500" />
+                     </div>
+                     <span className="text-xs font-bold text-slate-600">Upload Other</span>
+                   </>
+                )}
+             </div>
+          </div>
+
+          {/* Render Other Docs */}
+          {otherDocs.map((doc) => (
+            <div key={doc._id} className="md:col-span-1">
+               <FileCard doc={doc} onDelete={handleDelete} />
+            </div>
+          ))}
+        </div>
+      </div>
+
     </div>
   );
 }

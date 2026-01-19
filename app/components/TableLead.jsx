@@ -23,43 +23,38 @@ const STATUS_CONFIG = {
 const STATUS_OPTIONS = Object.keys(STATUS_CONFIG);
 
 // --- Status Dropdown with Fixed Portal ---
-function StatusDropdown({ initialStatus, leadId }) {
+function StatusDropdown({ initialStatus, lead, onStatusChange, onConvert }) { // Accept onConvert prop
   const [status, setStatus] = useState(initialStatus);
   const [isOpen, setIsOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 });
   const buttonRef = useRef(null);
 
-  // Update local state if prop changes
   useEffect(() => { setStatus(initialStatus); }, [initialStatus]);
 
-  // Calculate Fixed Position to avoid clipping
   useEffect(() => {
     if (isOpen && buttonRef.current) {
       const rect = buttonRef.current.getBoundingClientRect();
       const spaceBelow = window.innerHeight - rect.bottom;
-      const heightNeeded = 280; // approximate dropdown height
+      const heightNeeded = 280; 
       const showAbove = spaceBelow < heightNeeded;
 
       setCoords({
         left: rect.left,
         top: showAbove ? rect.top - 4 : rect.bottom + 4,
-        width: 170, // Fixed width for dropdown
+        width: 170, 
         placement: showAbove ? "bottom" : "top"
       });
     }
   }, [isOpen]);
 
-  // Close on outside click or scroll
   useEffect(() => {
     if (!isOpen) return;
     const handleGlobalClick = (e) => {
-      // Ignore clicks inside the button or the portal menu
       if (buttonRef.current?.contains(e.target)) return;
       if (e.target.closest('.status-portal-menu')) return;
       setIsOpen(false);
     };
-    // Close on scroll to prevent detached UI
     window.addEventListener("scroll", () => setIsOpen(false), true);
     window.addEventListener("mousedown", handleGlobalClick);
     return () => {
@@ -70,19 +65,33 @@ function StatusDropdown({ initialStatus, leadId }) {
 
   const handleSelect = async (newStatus) => {
     if (newStatus === status) { setIsOpen(false); return; }
+    
+    // --- FIX: TRIGGER MODAL IF 'CLOSED - WON' ---
+    if (newStatus === "Closed - Won") {
+        setIsOpen(false);
+        // Call parent function to open modal
+        if (onConvert) {
+            onConvert(lead); 
+        } else {
+            console.warn("onConvert prop is missing in TableLead");
+        }
+        return; // Stop here, do not update status via API yet
+    }
+
     setIsOpen(false);
     setIsLoading(true);
     
     try {
-      setStatus(newStatus); // Optimistic UI
-      const res = await fetch(`/api/leads/${leadId}`, {
+      setStatus(newStatus); 
+      const res = await fetch(`/api/leads/${lead._id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) throw new Error("Failed");
+      if (onStatusChange) onStatusChange(newStatus);
     } catch (error) {
-      setStatus(initialStatus); // Revert on error
+      setStatus(initialStatus); 
     } finally {
       setIsLoading(false);
     }
@@ -149,7 +158,7 @@ function StatusDropdown({ initialStatus, leadId }) {
 }
 
 // --- Main Table ---
-export default function TableLead({ data = [], onEdit, onDeleted }) {
+export default function TableLead({ data = [], onEdit, onDeleted, onConvert }) { // Accept onConvert prop
   async function handleDelete(id) {
     if (!confirm("Are you sure you want to delete this lead?")) return;
     await fetch(`/api/leads/${id}`, { method: "DELETE" });
@@ -160,8 +169,6 @@ export default function TableLead({ data = [], onEdit, onDeleted }) {
     <div className="border border-slate-200 rounded-lg bg-white shadow-[0_2px_8px_rgba(0,0,0,0.04)] overflow-hidden font-sans">
       <div className="overflow-x-auto min-h-[300px]">
         <table className="min-w-full text-sm border-separate border-spacing-0">
-          
-          {/* Header */}
           <thead className="bg-slate-50/80 backdrop-blur-sm text-slate-500">
             <tr>
               <th className="sticky left-0 z-20 border-b border-slate-200 bg-slate-50/95 px-4 py-3 text-left text-[10px] font-bold uppercase tracking-widest shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)] w-[220px] sm:w-auto">Identity</th>
@@ -171,8 +178,6 @@ export default function TableLead({ data = [], onEdit, onDeleted }) {
               <th className="border-b border-slate-200 px-4 py-3 text-right text-[10px] font-bold uppercase tracking-widest w-[80px]">Actions</th>
             </tr>
           </thead>
-
-          {/* Body */}
           <tbody className="divide-y divide-slate-100 bg-white">
             {data.length === 0 && (
               <tr>
@@ -184,8 +189,6 @@ export default function TableLead({ data = [], onEdit, onDeleted }) {
             
             {data.map((lead) => (
               <tr key={lead._id} className="hover:bg-slate-50/60 transition-colors group">
-                
-                {/* 1. Identity (Name, Designation, Company) */}
                 <td className="sticky left-0 z-10 border-b border-slate-100 bg-white group-hover:bg-slate-50/60 px-4 py-3 align-top shadow-[4px_0_12px_-4px_rgba(0,0,0,0.05)]">
                   <div className="flex flex-col gap-1 max-w-[200px]">
                     <div className="flex items-center gap-2">
@@ -193,14 +196,12 @@ export default function TableLead({ data = [], onEdit, onDeleted }) {
                         {lead.name}
                       </Link>
                     </div>
-                    {/* Name & Designation Line */}
                     {lead.designation && (
                       <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                         <User className="h-3 w-3 text-slate-300" />
                         <span className="truncate">{lead.designation}</span>
                       </div>
                     )}
-                    {/* Company Line */}
                     <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
                        <Building className="h-3 w-3 text-slate-300" />
                        <span className="truncate font-medium">{lead.company || "No Company"}</span>
@@ -208,12 +209,15 @@ export default function TableLead({ data = [], onEdit, onDeleted }) {
                   </div>
                 </td>
 
-                {/* 2. Status */}
+                {/* PASSING onConvert TO STATUS DROPDOWN */}
                 <td className="border-b border-slate-100 px-4 py-3 align-top">
-                  <StatusDropdown initialStatus={lead.status} leadId={lead._id} />
+                  <StatusDropdown 
+                    initialStatus={lead.status} 
+                    lead={lead} 
+                    onConvert={onConvert} // <--- VITAL LINK
+                  />
                 </td>
 
-                {/* 3. Contact (Hidden Mobile) */}
                 <td className="hidden sm:table-cell border-b border-slate-100 px-4 py-3 align-top">
                   <div className="flex flex-col gap-1.5">
                     {lead.email && (
@@ -232,11 +236,8 @@ export default function TableLead({ data = [], onEdit, onDeleted }) {
                   </div>
                 </td>
 
-                {/* 4. Context (Source, Platform, Service) - Hidden Tablet */}
                 <td className="hidden md:table-cell border-b border-slate-100 px-4 py-3 align-top">
                   <div className="flex flex-col gap-2 items-start">
-                    
-                    {/* Source & Platform Tags */}
                     <div className="flex flex-wrap gap-1.5">
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-100 rounded border border-slate-200 text-[10px] font-semibold text-slate-600 uppercase tracking-wide">
                         <Globe className="h-3 w-3 text-slate-400" />
@@ -249,8 +250,6 @@ export default function TableLead({ data = [], onEdit, onDeleted }) {
                         </span>
                       )}
                     </div>
-
-                    {/* Service Badge */}
                     {lead.service && (
                       <span className="text-[10px] font-bold text-[#10a37f] px-2 py-0.5 bg-[#10a37f]/5 rounded border border-[#10a37f]/20 truncate max-w-[140px]">
                         {lead.service}
@@ -259,26 +258,16 @@ export default function TableLead({ data = [], onEdit, onDeleted }) {
                   </div>
                 </td>
 
-                {/* 5. Actions */}
                 <td className="border-b border-slate-100 px-4 py-3 text-right align-top">
                   <div className="flex justify-end gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                    <button 
-                      onClick={() => onEdit(lead)} 
-                      className="p-1.5 text-slate-400 hover:text-[#10a37f] hover:bg-[#10a37f]/5 rounded-md transition-colors"
-                      title="Edit details"
-                    >
+                    <button onClick={() => onEdit(lead)} className="p-1.5 text-slate-400 hover:text-[#10a37f] hover:bg-[#10a37f]/5 rounded-md transition-colors" title="Edit details">
                       <Edit size={15} />
                     </button>
-                    <button 
-                      onClick={() => handleDelete(lead._id)} 
-                      className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                      title="Delete permanently"
-                    >
+                    <button onClick={() => handleDelete(lead._id)} className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors" title="Delete permanently">
                       <Trash2 size={15} />
                     </button>
                   </div>
                 </td>
-
               </tr>
             ))}
           </tbody>

@@ -1,4 +1,3 @@
-// app/api/clients/list/route.js
 import { NextResponse } from "next/server";
 import { connectMongoose } from "@/lib/mongoose";
 import Client from "@/models/Client";
@@ -10,7 +9,8 @@ export const revalidate = 0;
 
 export async function GET(req) {
   try {
-    await requireAdmin(); // ⟵ blocks non-admin
+    await requireAdmin();
+    await connectMongoose();
 
     const { searchParams } = new URL(req.url);
     const q = (searchParams.get("q") || "").trim();
@@ -18,34 +18,45 @@ export async function GET(req) {
     const perPage = Math.min(100, Math.max(1, parseInt(searchParams.get("perPage") || "25", 10)));
     const skip = (page - 1) * perPage;
 
-    await connectMongoose();
-
-    // Build match (regex-based; works without text index)
+    // --- 1. Advanced Search Logic ---
     let match = {};
+    
     if (q) {
-      const rx = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-      match = {
-        $or: [
-          { companyName: rx },
-          { clientName: rx },
-          { email: rx },
-          { phone: rx },
-          { "address.line1": rx },
-          { "address.city": rx },
-          { "address.state": rx },
-          { "address.postalCode": rx },
-          { "address.country": rx },
-        ],
-      };
+      // Split search terms by space to allow multi-field matching
+      // e.g. "John CEO" -> matches {clientName: /John/} AND {designation: /CEO/}
+      const terms = q.split(/\s+/).filter(Boolean);
+      
+      const searchFields = [
+        // Identity
+        "companyName", "clientName", "designation", 
+        // Contact
+        "email", "phone", "alternativePhone",
+        // Web
+        "website", "links", 
+        // Location
+        "address.line1", "address.line2", "address.city", "address.state", "address.postalCode", "address.country",
+        // Meta
+        "priority"
+      ];
+
+      // Create an AND array: Every term must match AT LEAST ONE field
+      match.$and = terms.map(term => {
+        const rx = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+        return {
+          $or: searchFields.map(field => ({ [field]: rx }))
+        };
+      });
     }
 
-    // Projection: keep only light fields (skip binary/file subdocs entirely)
-    const PROJECTION = "companyName clientName email phone priority createdAt updatedAt"; // _id included by default
+    // --- 2. Smart Projection ---
+    // Instead of selecting specific fields (which risks missing new ones like 'logo'), 
+    // we EXCLUDE the heavy arrays. Everything else (logo, designation, etc.) is included automatically.
+    const EXCLUDE_FIELDS = "-leadHistory -kycDocuments -__v";
 
     const totalPromise = q ? Client.countDocuments(match) : Client.estimatedDocumentCount();
 
     const rowsPromise = Client.find(match)
-      .select(PROJECTION)
+      .select(EXCLUDE_FIELDS)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(perPage)
@@ -54,26 +65,33 @@ export async function GET(req) {
 
     const [total, rows] = await Promise.all([totalPromise, rowsPromise]);
 
+    // --- 3. Data Formatting ---
     const out = rows.map((c) => {
-      const id = String(c._id);
-      const name = (c.companyName && c.companyName.trim())
-        ? c.companyName
-        : (c.clientName || "");
       return {
-        id,
-        _id: id,
-        name,
-        companyName: c.companyName || "",
-        clientName: c.clientName || "",
-        email: c.email || "",
-        phone: c.phone || "",
+        ...c,
+        _id: c._id.toString(), // Ensure ID is string for frontend
+        id: c._id.toString(),  // Legacy support
+        
+        // Safety defaults for UI
+        logo: c.logo || null,
+        designation: c.designation || "",
+        address: c.address || {},
         priority: c.priority || "Normal",
-        createdAt: c.createdAt,
-        updatedAt: c.updatedAt,
+        
+        // Display Name Logic
+        name: (c.companyName && c.companyName.trim()) 
+          ? c.companyName 
+          : (c.clientName || "Unknown Client")
       };
     });
 
-    return NextResponse.json({ total, page, perPage, rows: out }, { status: 200 });
+    return NextResponse.json({ 
+      total, 
+      page, 
+      perPage, 
+      rows: out 
+    }, { status: 200 });
+
   } catch (e) {
     if (e?.status === 401 || e?.status === 403) return handleAuthError(e);
     console.error("clients/list GET error:", e);

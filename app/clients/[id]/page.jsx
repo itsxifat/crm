@@ -51,11 +51,13 @@ function PriorityBadge({ priority }) {
   const styles = {
     High: "bg-rose-50 text-rose-700 border-rose-200",
     Medium: "bg-amber-50 text-amber-700 border-amber-200",
-    Normal: "bg-slate-50 text-slate-700 border-slate-200"
+    Normal: "bg-emerald-50 text-emerald-700 border-emerald-200" // Changed to Emerald for Normal
   };
+  // Default to Normal if undefined
+  const p = priority || "Normal";
   return (
-    <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide border ${styles[priority] || styles.Normal}`}>
-      {priority || "Normal"}
+    <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide border ${styles[p] || styles.Normal}`}>
+      {p}
     </span>
   );
 }
@@ -86,17 +88,31 @@ export default async function ClientDetailsPage({ params }) {
   const doc = await Client.findById(id).lean();
   if (!doc) return notFound();
 
-  // 3. Serialize Data
+  // 3. Serialize Data (Dates & IDs to Strings)
   const client = {
     ...doc,
     _id: doc._id.toString(),
+    convertedFrom: doc.convertedFrom ? doc.convertedFrom.toString() : null,
     createdAt: doc.createdAt?.toISOString(),
     updatedAt: doc.updatedAt?.toISOString(),
     joiningDate: doc.joiningDate ? doc.joiningDate.toISOString() : null,
-    // Ensure leadHistory is array
+    
+    // Ensure Arrays
+    links: Array.isArray(doc.links) ? doc.links : [],
+    
+    // Fix leadHistory serialization
     leadHistory: Array.isArray(doc.leadHistory) ? doc.leadHistory.map(h => ({
-        ...h,
+        text: h.text || "",
+        author: h.author || "",
         createdAt: h.createdAt ? h.createdAt.toISOString() : null
+    })) : [],
+
+    // Fix kycDocuments serialization
+    kycDocuments: Array.isArray(doc.kycDocuments) ? doc.kycDocuments.map(k => ({
+        _id: k._id ? k._id.toString() : null,
+        name: k.name,
+        url: k.url,
+        uploadedAt: k.uploadedAt ? k.uploadedAt.toISOString() : null
     })) : []
   };
 
@@ -141,7 +157,7 @@ export default async function ClientDetailsPage({ params }) {
           {/* LEFT COLUMN: Identity & Contact (4/12) */}
           <div className="lg:col-span-4 space-y-8">
             
-            {/* Identity Card with Logo */}
+            {/* Identity Card */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 relative overflow-hidden">
               <div className="flex items-start justify-between mb-6">
                 {client.logo ? (
@@ -151,11 +167,13 @@ export default async function ClientDetailsPage({ params }) {
                 ) : (
                   <ClientAvatar name={client.clientName} /> 
                 )}
+                {/* PRIORITY BADGE */}
                 <PriorityBadge priority={client.priority} />
               </div>
               
               <div className="mb-6">
                 <h2 className="text-xl font-bold text-slate-900">{client.clientName}</h2>
+                {/* DESIGNATION */}
                 <div className="text-sm font-medium text-[#10a37f] mt-0.5">{client.designation}</div>
                 <div className="flex items-center gap-1.5 text-xs text-slate-500 mt-2 font-medium">
                   <Building className="h-3.5 w-3.5" />
@@ -166,7 +184,8 @@ export default async function ClientDetailsPage({ params }) {
               <div className="space-y-1">
                 <Attribute icon={Mail} label="Email Address" value={client.email} href={`mailto:${client.email}`} />
                 <Attribute icon={Phone} label="Phone Number" value={client.phone} href={`tel:${client.phone}`} />
-                <Attribute icon={Phone} label="Alt Phone" value={client.alternativePhone} href={`tel:${client.alternativePhone}`} />
+                {/* ALTERNATIVE PHONE */}
+                <Attribute icon={Phone} label="Alt Phone" value={client.alternativePhone} href={client.alternativePhone ? `tel:${client.alternativePhone}` : null} />
                 <Attribute icon={Calendar} label="Client Since" value={client.joiningDate ? new Date(client.joiningDate).toLocaleDateString() : null} />
               </div>
             </div>
@@ -182,14 +201,19 @@ export default async function ClientDetailsPage({ params }) {
               </div>
             </div>
 
-            {/* Web Presence */}
+            {/* Web Presence Card */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
               <SectionTitle title="Digital Presence" />
               <div className="space-y-1">
                 <Attribute icon={Globe} label="Website" value={client.website} href={client.website} />
-                {client.links?.map((link, i) => (
-                   <Attribute key={i} icon={LinkIcon} label={`Link ${i+1}`} value={link} href={link} />
-                ))}
+                {/* MULTIPLE LINKS LOOP */}
+                {client.links && client.links.length > 0 ? (
+                  client.links.map((link, i) => (
+                     <Attribute key={i} icon={LinkIcon} label={`Link ${i+1}`} value={link} href={link} />
+                  ))
+                ) : (
+                  <Attribute icon={LinkIcon} label="Social Links" value={null} />
+                )}
               </div>
             </div>
 
@@ -202,10 +226,11 @@ export default async function ClientDetailsPage({ params }) {
             <section>
                <div className="flex items-center gap-2 mb-3 text-slate-400">
                   <FileText className="h-4 w-4" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest">KYC Documents</h3>
+                  <h3 className="text-xs font-bold uppercase tracking-widest">Documents (KYC)</h3>
                </div>
                
                <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
+                 {/* Pass serialized ID string */}
                  <KycSection clientId={client._id} />
                </div>
             </section>
@@ -224,7 +249,9 @@ export default async function ClientDetailsPage({ params }) {
                           <div className="absolute -left-[31px] top-1.5 h-4 w-4 rounded-full bg-slate-200 border-2 border-slate-50 group-hover:bg-[#10a37f] transition-colors" />
                           <div className="flex justify-between items-baseline mb-1">
                              <span className="text-xs font-bold text-slate-700">{item.author}</span>
-                             <span className="text-[10px] text-slate-400 font-mono">{new Date(item.createdAt).toLocaleDateString()}</span>
+                             <span className="text-[10px] text-slate-400 font-mono">
+                                {item.createdAt ? new Date(item.createdAt).toLocaleDateString() : ""}
+                             </span>
                           </div>
                           <div className="text-sm text-slate-600 bg-white p-3 rounded-lg border border-slate-200 shadow-sm leading-relaxed">
                             {item.text}
